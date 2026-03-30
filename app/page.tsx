@@ -2,7 +2,6 @@
 
 import { motion, useAnimation } from "framer-motion";
 import { useEffect, useState } from "react";
-import LoadingScreen from "@/components/LoadingScreen";
 import InputForm from "@/components/InputForm";
 import SuccessScreen from "@/components/SuccessScreen";
 import type { Employee } from "@/lib/notion";
@@ -21,8 +20,20 @@ export default function Home() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [success, setSuccess] = useState<SuccessData | null>(null);
   const [fetchError, setFetchError] = useState("");
+  const [submitError, setSubmitError] = useState("");
   const cardControls = useAnimation();
 
+  // 初回フェードイン
+  useEffect(() => {
+    cardControls.start({
+      opacity: 1,
+      y: 0,
+      rotateY: 0,
+      transition: { duration: 0.45, ease: "easeOut" },
+    });
+  }, []);
+
+  // 従業員リスト取得
   useEffect(() => {
     fetch("/api/employees")
       .then((r) => {
@@ -39,26 +50,40 @@ export default function Home() {
       });
   }, []);
 
-  // 初回フェードイン
-  useEffect(() => {
-    cardControls.start({ opacity: 1, y: 0, rotateY: 0, transition: { duration: 0.45, ease: "easeOut" } });
-  }, []);
+  const handleSubmit = async (id: string, name: string, type: StampType) => {
+    setSubmitError("");
 
-  const handleSuccess = async (name: string, type: StampType, time: Date) => {
-    // フリップ前半: 90度まで回転（カードが消える）
-    await cardControls.start({
-      rotateY: 90,
-      transition: { duration: 0.25, ease: "easeIn" },
-    });
-    // コンテンツを差し替え
-    setSuccess({ name, type, time });
-    setPhase("success");
-    // フリップ後半: -90度から0度へ（カードが現れる → スタンプへ）
-    cardControls.set({ rotateY: -90 });
-    await cardControls.start({
-      rotateY: 0,
-      transition: { duration: 0.3, ease: "easeOut" },
-    });
+    try {
+      const [res] = await Promise.all([
+        fetch("/api/timestamp", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pageId: id, employeeName: name, type }),
+        }),
+        new Promise((r) => setTimeout(r, 1200)), // 最低1.2秒表示
+      ]);
+      if (!res.ok) {
+        const data = await res.json();
+        const msg = data.detail
+          ? `${data.error}（${data.detail}）`
+          : data.error ?? "エラーが発生しました";
+        throw new Error(msg);
+      }
+      // 成功 → フリップして完了画面
+      await cardControls.start({
+        rotateY: 90,
+        transition: { duration: 0.25, ease: "easeIn" },
+      });
+      setSuccess({ name, type, time: new Date() });
+      setPhase("success");
+      cardControls.set({ rotateY: -90 });
+      await cardControls.start({
+        rotateY: 0,
+        transition: { duration: 0.3, ease: "easeOut" },
+      });
+    } catch (err: any) {
+      setSubmitError(err.message ?? "エラーが発生しました");
+    }
   };
 
   return (
@@ -72,24 +97,32 @@ export default function Home() {
           勤怠打刻システム
         </motion.h2>
 
-        {/* perspective はカード外側のラッパーに設定 */}
         <div style={{ perspective: 1200 }}>
           <motion.div
             initial={{ opacity: 0, y: 16 }}
             animate={cardControls}
             className="bg-white rounded-3xl shadow-[0_10px_40px_rgba(0,0,0,0.06)] px-5 py-8 sm:px-8 sm:py-10 overflow-hidden"
           >
-            <div>
-              {phase === "loading" && <LoadingScreen />}
+            <div className="min-h-[320px] flex flex-col justify-center">
+              {phase === "loading" && (
+                <div className="flex justify-center py-12">
+                  <svg className="w-8 h-8 animate-spin text-clock-blue" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                  </svg>
+                </div>
+              )}
 
               {phase === "input" && (
                 <>
                   {fetchError && (
-                    <p className="mb-4 text-sm text-center text-red-400">
-                      ⚠️ {fetchError}
-                    </p>
+                    <p className="mb-4 text-sm text-center text-red-400">⚠️ {fetchError}</p>
                   )}
-                  <InputForm employees={employees} onSuccess={handleSuccess} />
+                  <InputForm
+                    employees={employees}
+                    onSubmit={handleSubmit}
+                    error={submitError}
+                  />
                 </>
               )}
 
