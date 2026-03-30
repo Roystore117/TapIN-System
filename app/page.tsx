@@ -1,7 +1,8 @@
 "use client";
 
 import { motion, useAnimation } from "framer-motion";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import InputForm from "@/components/InputForm";
 import SuccessScreen from "@/components/SuccessScreen";
 import type { Employee } from "@/lib/notion";
@@ -22,6 +23,36 @@ export default function Home() {
   const [fetchError, setFetchError] = useState("");
   const [submitError, setSubmitError] = useState("");
   const cardControls = useAnimation();
+  const router = useRouter();
+
+  // 管理者モーダル
+  const [showAdminModal, setShowAdminModal] = useState(false);
+  const [adminPassword, setAdminPassword] = useState("");
+  const [adminError, setAdminError] = useState("");
+  const tapCountRef = useRef(0);
+  const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleLogoTap = () => {
+    tapCountRef.current += 1;
+    if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
+    if (tapCountRef.current >= 3) {
+      tapCountRef.current = 0;
+      setShowAdminModal(true);
+      setAdminPassword("");
+      setAdminError("");
+    } else {
+      tapTimerRef.current = setTimeout(() => { tapCountRef.current = 0; }, 1000);
+    }
+  };
+
+  const handleAdminLogin = () => {
+    if (adminPassword === "1234") {
+      setShowAdminModal(false);
+      router.push("/admin");
+    } else {
+      setAdminError("パスワードが違います");
+    }
+  };
 
   // 初回フェードイン
   useEffect(() => {
@@ -90,10 +121,11 @@ export default function Home() {
     <main className="h-[100dvh] flex flex-col items-center px-4 overflow-hidden">
       <div className="w-full max-w-[400px] relative h-full">
 
-        {/* ロゴ：カード上の残り領域を全て使う（完了画面では非表示） */}
+        {/* ロゴ：3回タップで管理者モーダル */}
         <div
           className={`absolute top-4 left-0 right-0 flex items-center justify-center ${phase === "success" ? "hidden" : ""}`}
-          style={{ bottom: "398px" /* 40px余白 + 350px card + 8px gap */ }}
+          style={{ bottom: "398px" }}
+          onClick={handleLogoTap}
         >
           <motion.img
             src="/logo.webp"
@@ -146,6 +178,44 @@ export default function Home() {
           </motion.div>
         </div>
       </div>
+
+      {/* 管理者モーダル */}
+      {showAdminModal && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="fixed inset-0 bg-black/40 flex items-center justify-center px-8 z-50"
+          onClick={() => setShowAdminModal(false)}
+        >
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ duration: 0.2 }}
+            className="bg-white rounded-3xl px-8 py-8 w-full max-w-[320px] shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="text-sm font-bold text-gray-500 tracking-wide mb-6 text-center">管理者ログイン</p>
+            <input
+              type="password"
+              value={adminPassword}
+              onChange={(e) => { setAdminPassword(e.target.value); setAdminError(""); }}
+              onKeyDown={(e) => e.key === "Enter" && handleAdminLogin()}
+              placeholder="パスワード"
+              autoFocus
+              className="w-full px-4 py-3 text-base rounded-2xl border-2 border-gray-100 bg-gray-50 focus:outline-none focus:border-clock-blue/50 transition-colors mb-2"
+            />
+            {adminError && (
+              <p className="text-xs text-red-400 text-center mb-2">{adminError}</p>
+            )}
+            <button
+              onClick={handleAdminLogin}
+              className="w-full py-3 mt-2 text-base font-bold text-white bg-clock-blue rounded-2xl"
+            >
+              ログイン
+            </button>
+          </motion.div>
+        </motion.div>
+      )}
     </main>
   );
 }

@@ -12,17 +12,10 @@ type Props = {
   error?: string;
 };
 
-const TIPS = [
+const FALLBACK_TIPS = [
   "深呼吸をひとつ。\n肩の力を抜いてみましょう。",
   "お水飲みましたか？\nこまめな水分補給を。",
   "無理なく続いてたら\nそれで100点満点！",
-  "滑り台を心から楽しめる\n大人でありたいですね。",
-  "『何もしない』というのも\n立派な予定のひとつです。",
-  "ため息をつくのは\n悪いものを出している証拠です。",
-  "大人だって\nプリンをご褒美に買っていい。",
-  "疲れたら\n30秒だけ目を閉じてみましょう。",
-  "背筋をぐーっと\n伸ばしてみましょう！",
-  "あなたの笑顔が\n誰かの元気になっています！",
 ];
 
 export default function InputForm({ employees, onSubmit, error }: Props) {
@@ -34,6 +27,14 @@ export default function InputForm({ employees, onSubmit, error }: Props) {
   const [mode, setMode] = useState<StampType>("出勤");
   const [submitting, setSubmitting] = useState(false);
   const [tip, setTip] = useState("");
+  const [tips, setTips] = useState<string[]>(FALLBACK_TIPS);
+
+  useEffect(() => {
+    fetch("/api/tips")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data: string[] | null) => { if (data && data.length > 0) setTips(data); })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!selectedId || employees.length === 0) return;
@@ -51,7 +52,7 @@ export default function InputForm({ employees, onSubmit, error }: Props) {
 
   const handleSubmit = () => {
     if (!selectedId || submitting) return;
-    setTip(TIPS[Math.floor(Math.random() * TIPS.length)]);
+    setTip(tips[Math.floor(Math.random() * tips.length)]);
     setSubmitting(true);
     localStorage.setItem("saved_employee_id", selectedId);
     onSubmit(selectedId, selectedName, mode);

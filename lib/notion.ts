@@ -48,6 +48,23 @@ export function roundUpToHour(date: Date): Date {
   return rounded;
 }
 
+/** 保健師の一言を全件取得（有効=trueのみ） */
+export async function getAllTips(): Promise<string[]> {
+  const response = await notion.databases.query({
+    database_id: process.env.TIPS_DB_ID!,
+    filter: { property: "有効", checkbox: { equals: true } },
+  });
+
+  return response.results.flatMap((page: any) => {
+    try {
+      const text = page.properties["一言"].title[0].text.content.replace(/\\n/g, "\n");
+      return text ? [text] : [];
+    } catch {
+      return [];
+    }
+  });
+}
+
 /** 打刻ログをNotionに書き込む */
 export async function registerTimestamp(
   pageId: string,
