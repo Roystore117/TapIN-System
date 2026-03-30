@@ -1,6 +1,6 @@
 "use client";
 
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import type { Employee } from "@/lib/notion";
 
@@ -26,7 +26,6 @@ const TIPS = [
 ];
 
 export default function InputForm({ employees, onSubmit, error }: Props) {
-  // localStorageから同期的に読み込み → 初回レンダリング時点でボタン色が確定する
   const [selectedId, setSelectedId] = useState(() => {
     if (typeof window === "undefined") return "";
     return localStorage.getItem("saved_employee_id") ?? "";
@@ -36,15 +35,11 @@ export default function InputForm({ employees, onSubmit, error }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [tip, setTip] = useState("");
 
-  // employeesリストが揃ったら名前を解決し、存在しないIDはクリア
   useEffect(() => {
     if (!selectedId || employees.length === 0) return;
     const found = employees.find((e) => e.id === selectedId);
-    if (found) {
-      setSelectedName(found.name);
-    } else {
-      setSelectedId("");
-    }
+    if (found) setSelectedName(found.name);
+    else setSelectedId("");
   }, [employees]);
 
   const handleSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -62,7 +57,6 @@ export default function InputForm({ employees, onSubmit, error }: Props) {
     onSubmit(selectedId, selectedName, mode);
   };
 
-  // 親からエラーが来たら送信中を解除
   useEffect(() => {
     if (error) setSubmitting(false);
   }, [error]);
@@ -70,106 +64,80 @@ export default function InputForm({ employees, onSubmit, error }: Props) {
   const isReady = !!selectedId && !submitting;
   const btnColor = mode === "出勤" ? "bg-clock-blue" : "bg-clock-red";
 
-  const containerVariants = {
-    hidden: { opacity: 0 },
-    visible: { opacity: 1, transition: { staggerChildren: 0.07 } },
-  };
-  const itemVariants = {
-    hidden: { opacity: 0 },
-    visible: { opacity: 1, transition: { duration: 0.35 } },
-  };
-
   return (
-    <motion.div
-      variants={containerVariants}
-      initial="hidden"
-      animate="visible"
-      className="text-left flex flex-col min-h-[320px]"
-    >
-      {/* 上半分：通常時はフォーム、送信中は保健師さんの一言 */}
-      <div className="flex-1 mb-7 flex flex-col">
-        <AnimatePresence mode="wait">
-          {!submitting ? (
-            <motion.div
-              key="form-fields"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.25 }}
-            >
-              {/* 名前選択 */}
-              <motion.div variants={itemVariants}>
-                <span className="block text-xs text-gray-500 font-semibold tracking-wide mb-2">
-                  名前を選択
-                </span>
-                <div className="relative mb-6">
-                  <select
-                    value={selectedId}
-                    onChange={handleSelect}
-                    className="w-full px-4 py-4 text-base rounded-2xl border-2 border-gray-100 bg-gray-50 appearance-none focus:outline-none focus:border-clock-blue/50 transition-colors"
-                  >
-                    <option value="" disabled>名前を選んでください</option>
-                    {employees.map((emp) => (
-                      <option key={emp.id} value={emp.id}>{emp.name}</option>
-                    ))}
-                  </select>
-                  <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-clock-blue">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M7 10l5 5 5-5H7z" />
-                    </svg>
-                  </span>
-                </div>
-              </motion.div>
+    // 3つの直接子要素をjustify-betweenで均等配置
+    <div className="flex flex-col justify-between h-full relative">
 
-              {/* 種別選択 */}
-              <motion.div variants={itemVariants}>
-                <span className="block text-xs text-gray-500 font-semibold tracking-wide mb-2">
-                  種別を選択
-                </span>
-                <div className="flex gap-1 bg-gray-100 p-1 rounded-full shadow-inner">
-                  {(["出勤", "退勤"] as StampType[]).map((t) => (
-                    <button
-                      key={t}
-                      onClick={() => setMode(t)}
-                      className={`flex-1 py-4 text-base font-bold rounded-full transition-all duration-300 ${
-                        mode === t
-                          ? t === "出勤"
-                            ? "bg-white text-clock-blue shadow-md scale-[1.02]"
-                            : "bg-white text-clock-red shadow-md scale-[1.02]"
-                          : "text-gray-400"
-                      }`}
-                    >
-                      {t}
-                    </button>
-                  ))}
-                </div>
-              </motion.div>
-            </motion.div>
-          ) : (
-            <motion.div
-              key="nurse-tip"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.25 }}
-              className="flex-1 flex items-center justify-center"
-            >
-              <div className="text-left border-l-4 border-blue-100 pl-5">
-                <span className="block text-[12px] text-blue-300 font-bold tracking-wider mb-3">
-                  保健師さんの一言
-                </span>
-                <p className="text-[22px] leading-relaxed text-clock-blue font-bold whitespace-pre-wrap">
-                  {tip}
-                </p>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+      {/* ① 名前を選択 */}
+      <motion.div animate={{ opacity: submitting ? 0 : 1 }} transition={{ duration: 0.2 }}>
+        <span className="block text-xs text-gray-500 font-semibold tracking-wide mb-2">
+          名前を選択
+        </span>
+        <div className="relative">
+          <select
+            value={selectedId}
+            onChange={handleSelect}
+            disabled={submitting}
+            className="w-full px-4 py-4 text-base rounded-2xl border-2 border-gray-100 bg-gray-50 appearance-none focus:outline-none focus:border-clock-blue/50 transition-colors"
+          >
+            <option value="" disabled>名前を選んでください</option>
+            {employees.map((emp) => (
+              <option key={emp.id} value={emp.id}>{emp.name}</option>
+            ))}
+          </select>
+          <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-clock-blue">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M7 10l5 5 5-5H7z" />
+            </svg>
+          </span>
+        </div>
+      </motion.div>
 
-      {/* 下半分：打刻ボタン（常に表示） */}
+      {/* ② 種別を選択 */}
+      <motion.div animate={{ opacity: submitting ? 0 : 1 }} transition={{ duration: 0.2 }}>
+        <span className="block text-xs text-gray-500 font-semibold tracking-wide mb-2">
+          種別を選択
+        </span>
+        <div className="flex gap-1 bg-gray-100 p-1 rounded-full shadow-inner">
+          {(["出勤", "退勤"] as StampType[]).map((t) => (
+            <button
+              key={t}
+              onClick={() => setMode(t)}
+              disabled={submitting}
+              className={`flex-1 py-4 text-base font-bold rounded-full transition-all duration-300 ${
+                mode === t
+                  ? t === "出勤"
+                    ? "bg-white text-clock-blue shadow-md scale-[1.02]"
+                    : "bg-white text-clock-red shadow-md scale-[1.02]"
+                  : "text-gray-400"
+              }`}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+      </motion.div>
+
+      {/* 保健師さんの一言: 送信中のみ絶対配置でオーバーレイ */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: submitting ? 1 : 0 }}
+        transition={{ duration: 0.25 }}
+        className="absolute inset-x-0 top-0 flex items-center justify-center pointer-events-none"
+        style={{ bottom: "70px" }}
+      >
+        <div className="text-left border-l-4 border-blue-100 pl-5">
+          <span className="block text-[12px] text-blue-300 font-bold tracking-wider mb-3">
+            保健師さんの一言
+          </span>
+          <p className="text-[22px] leading-relaxed text-clock-blue font-bold whitespace-pre-wrap">
+            {tip}
+          </p>
+        </div>
+      </motion.div>
+
+      {/* ③ 打刻ボタン */}
       <motion.button
-        variants={itemVariants}
         onClick={handleSubmit}
         disabled={!isReady}
         whileTap={isReady ? { scale: 0.96 } : {}}
@@ -192,16 +160,15 @@ export default function InputForm({ employees, onSubmit, error }: Props) {
         )}
       </motion.button>
 
-      {/* エラー */}
       {error && (
         <motion.p
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="mt-4 text-sm text-center text-red-400"
+          className="absolute bottom-[-28px] left-0 right-0 text-sm text-center text-red-400"
         >
           ⚠️ {error}
         </motion.p>
       )}
-    </motion.div>
+    </div>
   );
 }

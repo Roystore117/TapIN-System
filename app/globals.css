@@ -2,7 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-/* スムーズなタッチ操作 */
 * {
   -webkit-tap-highlight-color: transparent;
 }
@@ -13,14 +12,12 @@ html {
 
 body {
   overscroll-behavior: none;
-  /* iPhoneのノッチ・ホームバー領域を確保 */
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
 }
 
-/* selectの矢印をデフォルト非表示（tailwindのappearance-noneと組み合わせ） */
 select::-ms-expand {
   display: none;
 }
