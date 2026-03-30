@@ -26,20 +26,24 @@ const TIPS = [
 ];
 
 export default function InputForm({ employees, onSubmit, error }: Props) {
-  const [selectedId, setSelectedId] = useState("");
+  // localStorageから同期的に読み込み → 初回レンダリング時点でボタン色が確定する
+  const [selectedId, setSelectedId] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return localStorage.getItem("saved_employee_id") ?? "";
+  });
   const [selectedName, setSelectedName] = useState("");
   const [mode, setMode] = useState<StampType>("出勤");
   const [submitting, setSubmitting] = useState(false);
   const [tip, setTip] = useState("");
 
+  // employeesリストが揃ったら名前を解決し、存在しないIDはクリア
   useEffect(() => {
-    const saved = localStorage.getItem("saved_employee_id");
-    if (saved) {
-      const found = employees.find((e) => e.id === saved);
-      if (found) {
-        setSelectedId(found.id);
-        setSelectedName(found.name);
-      }
+    if (!selectedId || employees.length === 0) return;
+    const found = employees.find((e) => e.id === selectedId);
+    if (found) {
+      setSelectedName(found.name);
+    } else {
+      setSelectedId("");
     }
   }, [employees]);
 
