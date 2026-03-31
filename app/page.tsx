@@ -14,6 +14,7 @@ type SuccessData = {
   name: string;
   type: StampType;
   time: Date;
+  employeeId: string;
 };
 
 export default function Home() {
@@ -121,7 +122,7 @@ export default function Home() {
         rotateY: 90,
         transition: { duration: 0.25, ease: "easeIn" },
       });
-      setSuccess({ name, type, time: new Date() });
+      setSuccess({ name, type, time: new Date(), employeeId: id });
       setPhase("success");
       cardControls.set({ rotateY: -90 });
       await cardControls.start({
@@ -188,6 +189,7 @@ export default function Home() {
                   name={success.name}
                   type={success.type}
                   time={success.time}
+                  employeeId={success.employeeId}
                 />
               )}
             </div>

@@ -226,6 +226,76 @@ export async function updatePayrollSettings(
   });
 }
 
+export type PunchRecord = {
+  type: StampType;
+  timeStr: string; // "HH:MM" JST
+};
+
+/** 今日（JST）の従業員打刻を取得 */
+export async function getTodayPunches(employeeId: string): Promise<PunchRecord[]> {
+  const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+  const now = new Date();
+  const jstNow = new Date(now.getTime() + JST_OFFSET_MS);
+  const jstMidnightUTC = new Date(
+    Date.UTC(jstNow.getUTCFullYear(), jstNow.getUTCMonth(), jstNow.getUTCDate()) - JST_OFFSET_MS
+  );
+  const nextMidnightUTC = new Date(jstMidnightUTC.getTime() + 24 * 60 * 60 * 1000);
+
+  const response = await notion.databases.query({
+    database_id: process.env.DATABASE_ID!,
+    filter: {
+      and: [
+        { property: "従業員", relation: { contains: employeeId } },
+        { property: "実打刻", date: { on_or_after: jstMidnightUTC.toISOString() } },
+        { property: "実打刻", date: { before: nextMidnightUTC.toISOString() } },
+      ],
+    },
+  });
+
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return response.results.flatMap((page: any) => {
+    try {
+      const type = page.properties["打刻種別"]?.select?.name as StampType;
+      const isoStr = page.properties["実打刻"]?.date?.start;
+      if (!type || !isoStr) return [];
+      const jstDate = new Date(new Date(isoStr).getTime() + JST_OFFSET_MS);
+      const timeStr = `${pad(jstDate.getUTCHours())}:${pad(jstDate.getUTCMinutes())}`;
+      return [{ type, timeStr }];
+    } catch {
+      return [];
+    }
+  });
+}
+
+/** 時間外申請をNotionに書き込む */
+export async function createOvertimeRequest(data: {
+  employeeName: string;
+  applyDate: string;
+  earlyArrival: boolean;
+  earlyTime: string;
+  earlyReason: string;
+  overtime: boolean;
+  overtimeTime: string;
+  overtimeReason: string;
+}): Promise<void> {
+  const title = `${data.applyDate} ${data.employeeName} 時間外申請`;
+  await notion.pages.create({
+    parent: { database_id: process.env.OVERTIME_REQUEST_DB_ID! },
+    properties: {
+      タイトル:   { title: [{ text: { content: title } }] },
+      従業員名:   { rich_text: [{ text: { content: data.employeeName } }] },
+      申請日:     { date: { start: data.applyDate } },
+      早出申請:   { checkbox: data.earlyArrival },
+      早出時刻:   { rich_text: [{ text: { content: data.earlyTime } }] },
+      早出理由:   { rich_text: [{ text: { content: data.earlyReason } }] },
+      残業申請:   { checkbox: data.overtime },
+      残業時刻:   { rich_text: [{ text: { content: data.overtimeTime } }] },
+      残業理由:   { rich_text: [{ text: { content: data.overtimeReason } }] },
+      ステータス: { status: { name: "未対応" } },
+    },
+  });
+}
+
 /** 打刻ログをNotionに書き込む */
 export async function registerTimestamp(
   pageId: string,
