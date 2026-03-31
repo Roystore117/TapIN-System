@@ -93,24 +93,24 @@ export default function SuccessScreen({ name, type, time, employeeId }: Props) {
         {name}
       </motion.p>
 
-      </div>
-
-      {/* サブメッセージ：名前とボタンの中間に配置 */}
-      <motion.div variants={itemVariants} className="flex-1 flex items-center justify-center">
-        <p className="text-lg text-gray-400 leading-relaxed">{subMsg}</p>
-      </motion.div>
-
-      {/* 早出・残業申請（退勤時のみ） */}
+      {/* 早出・残業申請（退勤時のみ・名前の直下） */}
       {type === "退勤" && employeeId && (
         <motion.button
           variants={itemVariants}
           whileTap={{ scale: 0.96 }}
           onClick={() => router.push(`/apply?employeeId=${employeeId}&name=${encodeURIComponent(name)}`)}
-          className="mx-auto mb-3 px-6 py-2.5 text-sm font-semibold text-clock-blue border-2 border-clock-blue/30 rounded-full transition-colors"
+          className="mx-auto mb-6 px-6 py-2.5 text-sm font-semibold text-clock-blue border-2 border-clock-blue/30 rounded-full transition-colors"
         >
           早出・残業申請
         </motion.button>
       )}
+
+      </div>
+
+      {/* サブメッセージ */}
+      <motion.div variants={itemVariants} className="flex-1 flex items-center justify-center">
+        <p className="text-lg text-gray-400 leading-relaxed">{subMsg}</p>
+      </motion.div>
 
       {/* Topに戻る */}
       <motion.button
