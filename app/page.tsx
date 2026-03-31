@@ -45,8 +45,13 @@ export default function Home() {
     }
   };
 
-  const handleAdminLogin = () => {
-    if (adminPassword === "1234") {
+  const handleAdminLogin = async () => {
+    const res = await fetch("/api/admin/auth", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: adminPassword }),
+    });
+    if (res.ok) {
       setShowAdminModal(false);
       router.push("/admin");
     } else {

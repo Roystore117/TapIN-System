@@ -48,7 +48,7 @@ export function roundUpToHour(date: Date): Date {
   return rounded;
 }
 
-/** 保健師の一言を全件取得（有効=trueのみ） */
+/** 保健師の一言を全件取得（有効=trueのみ・打刻画面用） */
 export async function getAllTips(): Promise<string[]> {
   const response = await notion.databases.query({
     database_id: process.env.TIPS_DB_ID!,
@@ -59,6 +59,29 @@ export async function getAllTips(): Promise<string[]> {
     try {
       const text = page.properties["一言"].title[0].text.content.replace(/\\n/g, "\n");
       return text ? [text] : [];
+    } catch {
+      return [];
+    }
+  });
+}
+
+export type Tip = {
+  id: string;
+  text: string;
+  enabled: boolean;
+};
+
+/** 保健師の一言を全件取得（有効・無効含む・管理者画面用） */
+export async function getAllTipsAdmin(): Promise<Tip[]> {
+  const response = await notion.databases.query({
+    database_id: process.env.TIPS_DB_ID!,
+  });
+
+  return response.results.flatMap((page: any) => {
+    try {
+      const text = (page.properties["一言"].title[0]?.text.content ?? "").replace(/\\n/g, "\n");
+      const enabled = page.properties["有効"].checkbox ?? false;
+      return [{ id: page.id, text, enabled }];
     } catch {
       return [];
     }
