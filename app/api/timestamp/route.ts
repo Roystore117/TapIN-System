@@ -18,8 +18,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "不正な打刻種別" }, { status: 400 });
     }
 
-    const settings = await getPayrollSettings();
-    await registerTimestamp(pageId, employeeName, type, mockTime, settings.startTime, settings.endTime);
+    const settings = await getPayrollSettings().catch(() => null);
+    await registerTimestamp(pageId, employeeName, type, mockTime, settings?.startTime, settings?.endTime);
     return NextResponse.json({ success: true });
   } catch (error: any) {
     const detail = error?.body ?? error?.message ?? String(error);
