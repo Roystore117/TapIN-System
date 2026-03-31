@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   description: "H+ 勤怠打刻Webアプリ",
   // PWA用マニフェスト（後からmanifest.jsonを追加すれば有効になる）
   manifest: "/manifest.json",
-  icons: { apple: "/icon-192.png" },
+  icons: { apple: "/apple-touch-icon.png" },
 };
 
 export const viewport: Viewport = {
