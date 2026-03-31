@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { registerTimestamp, StampType } from "@/lib/notion";
+import { registerTimestamp, getPayrollSettings, StampType } from "@/lib/notion";
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { pageId, employeeName, type } = body as {
+    const { pageId, employeeName, type, mockTime } = body as {
       pageId: string;
       employeeName: string;
       type: StampType;
+      mockTime?: string; // "HH:MM" 形式（デバッグ用）
     };
 
     if (!pageId || !employeeName || !type) {
@@ -17,7 +18,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "不正な打刻種別" }, { status: 400 });
     }
 
-    await registerTimestamp(pageId, employeeName, type);
+    const settings = await getPayrollSettings();
+    await registerTimestamp(pageId, employeeName, type, mockTime, settings.startTime, settings.endTime);
     return NextResponse.json({ success: true });
   } catch (error: any) {
     const detail = error?.body ?? error?.message ?? String(error);

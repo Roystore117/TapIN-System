@@ -25,6 +25,7 @@ export default function InputForm({ employees, onSubmit, error }: Props) {
   });
   const [selectedName, setSelectedName] = useState("");
   const [mode, setMode] = useState<StampType>("出勤");
+  const [modeSetByTime, setModeSetByTime] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [tip, setTip] = useState("");
   const [tips, setTips] = useState<string[]>(FALLBACK_TIPS);
@@ -33,6 +34,23 @@ export default function InputForm({ employees, onSubmit, error }: Props) {
     fetch("/api/tips")
       .then((r) => r.ok ? r.json() : null)
       .then((data: string[] | null) => { if (data && data.length > 0) setTips(data); })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (modeSetByTime) return;
+    fetch("/api/settings")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data: { autoSwitch: boolean; switchTime: string } | null) => {
+        if (!data?.autoSwitch) return;
+        const [switchH, switchM] = data.switchTime.split(":").map(Number);
+        const now = new Date();
+        const h = now.getHours();
+        const m = now.getMinutes();
+        const isAfter = h > switchH || (h === switchH && m >= switchM);
+        setMode(isAfter ? "退勤" : "出勤");
+        setModeSetByTime(true);
+      })
       .catch(() => {});
   }, []);
 

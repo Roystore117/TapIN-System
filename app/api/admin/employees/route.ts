@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAllTipsAdmin, createTip } from "@/lib/notion";
+import { getAllEmployeesAdmin, createEmployee } from "@/lib/notion";
 import { verifyAdminCookie } from "@/lib/adminAuth";
 
 export async function GET(req: NextRequest) {
@@ -7,8 +7,8 @@ export async function GET(req: NextRequest) {
   if (authError) return authError;
 
   try {
-    const tips = await getAllTipsAdmin();
-    return NextResponse.json(tips);
+    const employees = await getAllEmployeesAdmin();
+    return NextResponse.json(employees);
   } catch {
     return NextResponse.json({ error: "取得に失敗しました" }, { status: 500 });
   }
@@ -18,10 +18,10 @@ export async function POST(req: NextRequest) {
   const authError = verifyAdminCookie(req);
   if (authError) return authError;
 
-  const { text, enabled } = await req.json();
+  const { name, employeeId, status } = await req.json();
   try {
-    const tip = await createTip(text, enabled);
-    return NextResponse.json(tip);
+    const employee = await createEmployee(name, employeeId, status);
+    return NextResponse.json(employee);
   } catch {
     return NextResponse.json({ error: "追加に失敗しました" }, { status: 500 });
   }

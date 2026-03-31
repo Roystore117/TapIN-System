@@ -21,3 +21,13 @@ body {
 select::-ms-expand {
   display: none;
 }
+
+/* dvh非対応ブラウザ（Chrome<108, 旧Android等）向けフォールバック */
+.h-dvh {
+  height: 100vh;
+  height: 100dvh;
+}
+.h-dvh-card {
+  height: calc(100vh - 80px);
+  height: calc(100dvh - 80px);
+}

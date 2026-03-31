@@ -74,3 +74,21 @@
 - [ ] パスワードをオーナーが変更できる仕組み
 - [ ] 管理者セッションのログアウト機能
 - [ ] APIレート制限（Notionへの過剰リクエスト防止）
+
+## ⚠ 本番前に必ず削除するデバッグ機能
+
+### モック時刻機能（打刻時刻の偽装）
+
+| ファイル | 該当箇所 |
+|---------|---------|
+| `components/PayrollSettings.tsx` | デバッグセクション（テスト打刻時刻UI） |
+| `app/page.tsx` | `localStorage.getItem("debug_mock_time")` をAPIに送る処理 |
+| `app/api/timestamp/route.ts` | `mockTime` パラメーターの受け取り |
+| `lib/notion.ts` | `registerTimestamp()` の `mockTime` 引数とその適用ロジック |
+
+## ⚠ 本番前にNotion連携が必要なハードコーディング箇所
+
+| ファイル | 内容 |
+|---------|------|
+| `components/PayrollSettings.tsx` | 始業・終業時刻、みなし残業時間の設定値 |
+| `lib/notion.ts` | `STANDARD_START_HOUR/MIN`（始業標準時刻） |

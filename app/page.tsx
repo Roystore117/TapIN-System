@@ -46,16 +46,20 @@ export default function Home() {
   };
 
   const handleAdminLogin = async () => {
-    const res = await fetch("/api/admin/auth", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password: adminPassword }),
-    });
-    if (res.ok) {
-      setShowAdminModal(false);
-      router.push("/admin");
-    } else {
-      setAdminError("パスワードが違います");
+    try {
+      const res = await fetch("/api/admin/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: adminPassword }),
+      });
+      if (res.ok) {
+        setShowAdminModal(false);
+        router.push("/admin");
+      } else {
+        setAdminError("パスワードが違います");
+      }
+    } catch {
+      setAdminError("通信エラーが発生しました");
     }
   };
 
@@ -94,7 +98,14 @@ export default function Home() {
         fetch("/api/timestamp", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ pageId: id, employeeName: name, type }),
+          body: JSON.stringify({
+            pageId: id,
+            employeeName: name,
+            type,
+            mockTime: localStorage.getItem("debug_mock_enabled") === "true"
+              ? localStorage.getItem("debug_mock_time") ?? undefined
+              : undefined,
+          }),
         }),
         new Promise((r) => setTimeout(r, 1200)), // 最低1.2秒表示
       ]);
@@ -123,7 +134,7 @@ export default function Home() {
   };
 
   return (
-    <main className="h-[100dvh] flex flex-col items-center px-4 overflow-hidden">
+    <main className="h-dvh flex flex-col items-center px-4 overflow-hidden">
       <div className="w-full max-w-[400px] relative h-full">
 
         {/* ロゴ：3回タップで管理者モーダル */}
@@ -147,7 +158,7 @@ export default function Home() {
           <motion.div
             initial={{ opacity: 0, y: 16 }}
             animate={cardControls}
-            className={`bg-white rounded-3xl shadow-[0_10px_40px_rgba(0,0,0,0.06)] px-6 py-6 sm:px-8 overflow-hidden ${phase === "success" ? "h-[calc(100dvh-80px)]" : "h-[350px]"}`}
+            className={`bg-white rounded-3xl shadow-[0_10px_40px_rgba(0,0,0,0.06)] px-6 py-6 sm:px-8 overflow-hidden ${phase === "success" ? "h-dvh-card" : "h-[350px]"}`}
           >
             <div className="h-full flex flex-col justify-center">
               {phase === "loading" && (
