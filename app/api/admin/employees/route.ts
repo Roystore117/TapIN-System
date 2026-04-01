@@ -22,7 +22,8 @@ export async function POST(req: NextRequest) {
   try {
     const employee = await createEmployee(name, employeeId, status);
     return NextResponse.json(employee);
-  } catch {
-    return NextResponse.json({ error: "追加に失敗しました" }, { status: 500 });
+  } catch (e: any) {
+    const detail = e?.body ?? e?.message ?? String(e);
+    return NextResponse.json({ error: "追加に失敗しました", detail }, { status: 500 });
   }
 }
