@@ -28,99 +28,99 @@ export default function SuccessScreen({ name, type, time, employeeId }: Props) {
   const m = pad(time.getMonth() + 1);
   const d = pad(time.getDate());
 
-  const containerVariants = {
-    hidden: { opacity: 0 },
-    visible: { opacity: 1, transition: { staggerChildren: 0.08 } },
-  };
-  const itemVariants = {
-    hidden: { opacity: 0 },
-    visible: { opacity: 1, transition: { duration: 0.3 } },
+  const item = {
+    hidden: { opacity: 0, y: 8 },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.35 } },
   };
 
   return (
     <motion.div
-      variants={containerVariants}
       initial="hidden"
       animate="visible"
-      className="text-center h-full flex flex-col pt-8 pb-8"
-      style={{ borderTop: `6px solid ${accentColor}` }}
+      transition={{ staggerChildren: 0.07 }}
+      className="h-full flex flex-col"
     >
-      <div className="flex-1 flex flex-col justify-center">
-      {/* チェックスタンプ */}
-      <motion.div
-        initial={{ scale: 0, rotate: -15, opacity: 0 }}
-        animate={{ scale: [0, 1.35, 0.95, 1], rotate: [-15, 6, -3, 0], opacity: 1 }}
-        transition={{ duration: 0.55, times: [0, 0.5, 0.75, 1], ease: "easeOut", delay: 0.05 }}
-        className="mx-auto mb-6 flex items-center justify-center rounded-full w-48 h-48"
-        style={{ backgroundColor: accentColor }}
-      >
-        <motion.svg viewBox="0 0 52 52" className="w-24 h-24">
-          <motion.path
-            fill="none"
-            stroke="white"
-            strokeWidth="5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M14 27 L22 35 L38 18"
-            initial={{ pathLength: 0 }}
-            animate={{ pathLength: 1 }}
-            transition={{ duration: 0.3, delay: 0.45, ease: "easeOut" }}
-          />
-        </motion.svg>
-      </motion.div>
+      {/* ── メインコンテンツ ── */}
+      <div className="flex-1 flex flex-col items-center justify-center">
 
-      {/* 完了ラベル */}
-      <motion.div variants={itemVariants}>
-        <span className="inline-block text-base font-bold mb-4" style={{ color: accentColor }}>
-          {type}打刻完了
-        </span>
-      </motion.div>
-
-      {/* 時刻 */}
-      <motion.div
-        variants={itemVariants}
-        className="text-[64px] font-extrabold leading-none tracking-tighter text-gray-800 mb-2"
-        style={{ fontFamily: "Helvetica Neue, Arial, sans-serif" }}
-      >
-        {h}:{min}
-      </motion.div>
-
-      {/* 日付・名前 */}
-      <motion.p variants={itemVariants} className="text-sm text-gray-400 tracking-widest mb-1">
-        {y}.{m}.{d}
-      </motion.p>
-      <motion.p variants={itemVariants} className="text-sm text-gray-400 tracking-widest mb-6">
-        {name}
-      </motion.p>
-
-      {/* 早出・残業申請（退勤時のみ・名前の直下） */}
-      {type === "退勤" && employeeId && (
-        <motion.button
-          variants={itemVariants}
-          whileTap={{ scale: 0.96 }}
-          onClick={() => router.push(`/apply?employeeId=${employeeId}&name=${encodeURIComponent(name)}&checkoutTime=${h}:${min}`)}
-          className="mx-auto mb-6 px-6 py-2.5 text-sm font-semibold text-clock-blue border-2 border-clock-blue/30 rounded-full transition-colors"
+        {/* ① チェックサークル（小さく、添え物） */}
+        <motion.div
+          initial={{ scale: 0, opacity: 0 }}
+          animate={{ scale: [0, 1.25, 0.9, 1], opacity: 1 }}
+          transition={{ duration: 0.45, times: [0, 0.5, 0.75, 1], ease: "easeOut" }}
+          className="w-14 h-14 rounded-full flex items-center justify-center mb-5"
+          style={{ backgroundColor: accentColor }}
         >
-          早出・残業申請
-        </motion.button>
-      )}
+          <motion.svg viewBox="0 0 52 52" className="w-7 h-7">
+            <motion.path
+              fill="none" stroke="white" strokeWidth="5.5"
+              strokeLinecap="round" strokeLinejoin="round"
+              d="M14 27 L22 35 L38 18"
+              initial={{ pathLength: 0 }}
+              animate={{ pathLength: 1 }}
+              transition={{ duration: 0.28, delay: 0.35, ease: "easeOut" }}
+            />
+          </motion.svg>
+        </motion.div>
 
+        {/* ② 名前（最重要：誰の打刻か） */}
+        <motion.p
+          variants={item}
+          className="text-[9vw] font-bold text-gray-800 leading-none mb-1.5"
+        >
+          {name}
+        </motion.p>
+
+        {/* ③ 種別（何をしたか） */}
+        <motion.p
+          variants={item}
+          className="text-[4.5vw] font-semibold tracking-[0.15em] mb-4"
+          style={{ color: accentColor }}
+        >
+          {type}完了
+        </motion.p>
+
+        {/* ④ 時刻（記録データ） */}
+        <motion.div
+          variants={item}
+          className="text-[18vw] font-light leading-none tracking-tight text-gray-700 mb-1.5"
+        >
+          {h}:{min}
+        </motion.div>
+
+        {/* ⑤ 日付（補足） */}
+        <motion.p
+          variants={item}
+          className="text-[3.5vw] tracking-[0.2em] text-gray-400"
+        >
+          {y}.{m}.{d}
+        </motion.p>
+
+        {/* ⑥ 早出・残業申請（退勤時のみ） */}
+        {type === "退勤" && employeeId && (
+          <motion.button
+            variants={item}
+            whileTap={{ scale: 0.96 }}
+            onClick={() => router.push(`/apply?employeeId=${employeeId}&name=${encodeURIComponent(name)}&checkoutTime=${h}:${min}`)}
+            className="mt-4 px-5 py-2 text-[3.5vw] font-semibold rounded-full"
+            style={{ color: accentColor, border: `1.5px solid ${accentColor}40` }}
+          >
+            早出・残業申請
+          </motion.button>
+        )}
       </div>
 
-      {/* サブメッセージ */}
-      <motion.div variants={itemVariants} className="flex-1 flex items-center justify-center">
-        <p className="text-lg text-gray-400 leading-relaxed">{subMsg}</p>
+      {/* ── ボトム ── */}
+      <motion.div variants={item} className="flex flex-col gap-3 pt-2">
+        <p className="text-base text-center font-medium text-gray-500">{subMsg}</p>
+        <motion.button
+          whileTap={{ scale: 0.97 }}
+          onClick={() => window.location.reload()}
+          className="w-full py-4 rounded-2xl text-sm font-semibold text-gray-400 bg-gray-50 active:bg-gray-100 transition-colors"
+        >
+          Topに戻る
+        </motion.button>
       </motion.div>
-
-      {/* Topに戻る */}
-      <motion.button
-        variants={itemVariants}
-        whileTap={{ scale: 0.96 }}
-        onClick={() => window.location.reload()}
-        className="mx-auto px-6 py-2.5 text-sm font-semibold text-gray-400 border border-gray-200 rounded-full hover:border-gray-300 hover:text-gray-500 transition-colors"
-      >
-        Topに戻る
-      </motion.button>
     </motion.div>
   );
 }

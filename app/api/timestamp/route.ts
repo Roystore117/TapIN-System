@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { registerTimestamp, getPayrollSettings, StampType } from "@/lib/notion";
+import { registerClockIn, registerClockOut, StampType } from "@/lib/notion";
 
 export async function POST(req: NextRequest) {
   try {
@@ -8,7 +8,7 @@ export async function POST(req: NextRequest) {
       pageId: string;
       employeeName: string;
       type: StampType;
-      mockTime?: string; // "HH:MM" 形式（デバッグ用）
+      mockTime?: string;
     };
 
     if (!pageId || !employeeName || !type) {
@@ -18,10 +18,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "不正な打刻種別" }, { status: 400 });
     }
 
-    const settings = await getPayrollSettings().catch(() => null);
-    await registerTimestamp(pageId, employeeName, type, mockTime, settings?.startTime, settings?.endTime);
+    if (type === "出勤") {
+      await registerClockIn(pageId, employeeName, mockTime);
+    } else {
+      await registerClockOut(pageId, mockTime);
+    }
+
     return NextResponse.json({ success: true });
   } catch (error: any) {
+    if (error?.message === "ALREADY_CLOCKED_IN") {
+      return NextResponse.json({ error: "出勤中です！" }, { status: 409 });
+    }
+    if (error?.message === "ALREADY_CLOCKED_OUT") {
+      return NextResponse.json({ error: "本日はすでに退勤済みです。出勤の打刻が見つからない場合はオーナーに連絡してください" }, { status: 409 });
+    }
     const detail = error?.body ?? error?.message ?? String(error);
     console.error("打刻登録エラー:", detail);
     return NextResponse.json(

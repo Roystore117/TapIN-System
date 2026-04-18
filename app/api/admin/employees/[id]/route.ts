@@ -7,9 +7,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (authError) return authError;
 
   const { id } = await params;
-  const { name, status } = await req.json();
+  const fields = await req.json();
   try {
-    await updateEmployee(id, name, status);
+    await updateEmployee(id, fields);
     return NextResponse.json({ ok: true });
   } catch {
     return NextResponse.json({ error: "更新に失敗しました" }, { status: 500 });

@@ -64,7 +64,6 @@ export default function Home() {
     }
   };
 
-  // 初回フェードイン
   useEffect(() => {
     cardControls.start({
       opacity: 1,
@@ -74,7 +73,6 @@ export default function Home() {
     });
   }, []);
 
-  // 従業員リスト取得
   useEffect(() => {
     fetch("/api/employees")
       .then((r) => {
@@ -108,7 +106,7 @@ export default function Home() {
               : undefined,
           }),
         }),
-        new Promise((r) => setTimeout(r, 1200)), // 最低1.2秒表示
+        new Promise((r) => setTimeout(r, 1200)),
       ]);
       if (!res.ok) {
         const data = await res.json();
@@ -117,7 +115,6 @@ export default function Home() {
           : data.error ?? "エラーが発生しました";
         throw new Error(msg);
       }
-      // 成功 → フリップして完了画面
       await cardControls.start({
         rotateY: 90,
         transition: { duration: 0.25, ease: "easeIn" },
@@ -135,66 +132,81 @@ export default function Home() {
   };
 
   return (
-    <main className="h-dvh flex flex-col items-center px-4 overflow-hidden">
-      <div className="w-full max-w-[400px] relative h-full">
+    <main className="h-dvh flex flex-col bg-black">
 
-        {/* ロゴ：3回タップで管理者モーダル */}
-        <div
-          className={`absolute top-4 left-0 right-0 flex items-center justify-center ${phase === "success" ? "hidden" : ""}`}
-          style={{ bottom: "398px" }}
+      {/* ロゴ：中央配置・画面上部の空間を使う */}
+      {phase !== "success" && (
+        <motion.div
+          className="flex-1 flex items-center justify-center"
           onClick={handleLogoTap}
         >
           <motion.img
-            src="/logo.webp"
+            src="/logo-white.png"
             alt="Tap-IN"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.45 }}
-            className="w-full h-full object-contain"
+            className="h-[45%] w-auto max-w-[70%] object-contain"
           />
-        </div>
+        </motion.div>
+      )}
 
-        {/* カード：下辺を常にbottom-10に固定 */}
-        <div className="absolute bottom-10 left-0 right-0" style={{ perspective: 1200 }}>
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            animate={cardControls}
-            className={`bg-white rounded-3xl shadow-[0_10px_40px_rgba(0,0,0,0.06)] px-6 py-6 sm:px-8 overflow-hidden ${phase === "success" ? "h-dvh-card" : "h-[350px]"}`}
-          >
-            <div className="h-full flex flex-col justify-center">
-              {phase === "loading" && (
-                <div className="flex justify-center py-12">
-                  <svg className="w-8 h-8 animate-spin text-clock-blue" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                  </svg>
-                </div>
-              )}
-
-              {phase === "input" && (
-                <>
-                  {fetchError && (
-                    <p className="mb-4 text-sm text-center text-red-400">⚠️ {fetchError}</p>
-                  )}
-                  <InputForm
-                    employees={employees}
-                    onSubmit={handleSubmit}
-                    error={submitError}
-                  />
-                </>
-              )}
-
-              {phase === "success" && success && (
-                <SuccessScreen
-                  name={success.name}
-                  type={success.type}
-                  time={success.time}
-                  employeeId={success.employeeId}
-                />
-              )}
+      {/* ボトムシート：画面端まで広がる白カード */}
+      <div
+        style={{ perspective: 1200 }}
+        className={phase === "success" ? "flex-1 flex flex-col" : ""}
+      >
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          animate={cardControls}
+          className={`relative bg-white shadow-[0_-8px_40px_rgba(0,0,0,0.25)] overflow-hidden ${
+            phase === "success"
+              ? "flex-1 rounded-none"
+              : "rounded-none"
+          }`}
+        >
+          {/* ハンドルバー */}
+          {phase !== "success" && (
+            <div className="flex justify-center pt-3 pb-1">
+              <div className="w-9 h-1 bg-gray-200 rounded-full" />
             </div>
-          </motion.div>
-        </div>
+          )}
+
+          {/* コンテンツ：中央寄せ + padding */}
+          <div className={`max-w-[440px] mx-auto px-6 pb-8 sm:px-8 ${phase === "success" ? "h-full pt-6" : "pt-4"}`}>
+
+            {phase === "loading" && (
+              <div className="flex justify-center py-12">
+                <svg className="w-8 h-8 animate-spin text-clock-blue" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                </svg>
+              </div>
+            )}
+
+            {phase === "input" && (
+              <>
+                {fetchError && (
+                  <p className="mb-4 text-sm text-center text-red-400">⚠️ {fetchError}</p>
+                )}
+                <InputForm
+                  employees={employees}
+                  onSubmit={handleSubmit}
+                  error={submitError}
+                />
+              </>
+            )}
+
+            {phase === "success" && success && (
+              <SuccessScreen
+                name={success.name}
+                type={success.type}
+                time={success.time}
+                employeeId={success.employeeId}
+              />
+            )}
+          </div>
+        </motion.div>
       </div>
 
       {/* 管理者モーダル */}
@@ -202,7 +214,7 @@ export default function Home() {
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="fixed inset-0 bg-black/40 flex items-center justify-center px-8 z-50"
+          className="fixed inset-0 bg-black/60 flex items-center justify-center px-8 z-50"
           onClick={() => setShowAdminModal(false)}
         >
           <motion.div

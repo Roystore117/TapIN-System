@@ -1,13 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { adminFetch } from "@/lib/adminFetch";
+
+type StoreInfo = { id: string; storeName: string; closingDay: number };
 
 type Settings = {
   id: string;
-  startTime: string;       // 始業標準時刻
-  endTime: string;         // 終業標準時刻
-  deemedOvertimeHours: number; // みなし残業時間（時間/月）
-  alertThreshold: number;  // アラート閾値（%）
+  startTime: string;
+  endTime: string;
+  deemedOvertimeHours: number;
+  alertThreshold: number;
 };
 
 const DEFAULT_SETTINGS: Settings = {
@@ -41,55 +44,41 @@ const FIELDS: { section: string; desc: string; items: FieldConfig[] }[] = [
   },
 ];
 
-function Toggle({ value, onChange }: { value: boolean; onChange: () => void }) {
-  return (
-    <button
-      onClick={onChange}
-      className={`w-12 h-6 rounded-full transition-colors duration-300 relative ${value ? "bg-clock-blue" : "bg-gray-200"}`}
-    >
-      <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all duration-300 ${value ? "left-7" : "left-1"}`} />
-    </button>
-  );
-}
-
 export default function PayrollSettings() {
+  const [stores, setStores] = useState<StoreInfo[]>([]);
+  const [selectedPageId, setSelectedPageId] = useState<string>("");
+
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetch("/api/admin/payroll")
-      .then((r) => {
-        if (!r.ok) throw new Error();
-        return r.json();
-      })
-      .then((data: Settings) => {
-        setSettings(data);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, []);
-
-  // デバッグ用モック時刻（SSRと一致させるため初期値は固定、mount後にlocalStorageを読む）
-  const [mockEnabled, setMockEnabled] = useState(false);
-  const [mockTime, setMockTime] = useState("09:00");
-
-  useEffect(() => {
-    setMockEnabled(localStorage.getItem("debug_mock_enabled") === "true");
-    setMockTime(localStorage.getItem("debug_mock_time") ?? "09:00");
-  }, []);
-  const applyMock = (val: string) => {
-    setMockTime(val);
-    localStorage.setItem("debug_mock_time", val);
-  };
-  const toggleMockEnabled = (val: boolean) => {
-    setMockEnabled(val);
-    localStorage.setItem("debug_mock_enabled", String(val));
-    if (!val) localStorage.removeItem("debug_mock_time");
-    else localStorage.setItem("debug_mock_time", mockTime);
-  };
+  const [storesLoading, setStoresLoading] = useState(true);
+  const [settingsLoading, setSettingsLoading] = useState(false);
   const [editing, setEditing] = useState<keyof Settings | null>(null);
   const [draft, setDraft] = useState<string>("");
   const [saved, setSaved] = useState(false);
+
+  // 店舗リスト取得（初回のみ）
+  useEffect(() => {
+    adminFetch("/api/admin/store-settings")
+      .then((r) => r.ok ? r.json() : Promise.reject(new Error()))
+      .then((data: StoreInfo[]) => {
+        const sorted = [...data].sort((a, b) => b.storeName.localeCompare(a.storeName));
+        setStores(sorted);
+        if (sorted.length > 0) setSelectedPageId(sorted[0].id);
+      })
+      .catch(() => {})
+      .finally(() => setStoresLoading(false));
+  }, []);
+
+  // 店舗が変わるたびに設定を再取得
+  useEffect(() => {
+    if (!selectedPageId) return;
+    setSettingsLoading(true);
+    setSaved(false);
+    adminFetch(`/api/admin/payroll?pageId=${selectedPageId}`)
+      .then((r) => r.ok ? r.json() : Promise.reject(new Error()))
+      .then((data: Settings) => setSettings(data))
+      .catch(() => {})
+      .finally(() => setSettingsLoading(false));
+  }, [selectedPageId]);
 
   const startEdit = (key: keyof Settings) => {
     setEditing(key);
@@ -105,23 +94,26 @@ export default function PayrollSettings() {
 
   const handleSave = async () => {
     try {
-      const res = await fetch("/api/admin/payroll", {
+      const res = await adminFetch("/api/admin/payroll", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(settings),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(`保存に失敗しました\n${data.detail ?? data.error ?? res.status}`);
+        return;
+      }
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
-    } catch {
-      alert("保存に失敗しました");
+    } catch (e: any) {
+      alert(`保存に失敗しました\n${e?.message ?? String(e)}`);
     }
   };
 
-  // みなし残業のアラート発動ライン（時間）
   const alertAt = Math.round(settings.deemedOvertimeHours * settings.alertThreshold / 100);
 
-  if (loading) {
+  if (storesLoading) {
     return (
       <div className="h-full flex items-center justify-center">
         <svg className="w-6 h-6 animate-spin text-clock-blue" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -134,106 +126,112 @@ export default function PayrollSettings() {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
-        {FIELDS.map((group) => (
-          <div key={group.section}>
-            {/* セクションヘッダー */}
-            <p className="text-xs font-bold text-gray-400 tracking-wide mb-0.5">{group.section}</p>
-            <p className="text-[11px] text-gray-300 mb-3">{group.desc}</p>
-
-            <div className="bg-gray-50 rounded-2xl overflow-hidden">
-              {group.items.map((item, i) => (
-                <div
-                  key={item.key}
-                  className={`flex items-center px-4 py-3.5 ${i !== group.items.length - 1 ? "border-b border-gray-100" : ""}`}
-                >
-                  <span className="flex-1 text-sm text-gray-600">{item.label}</span>
-
-                  {editing === item.key ? (
-                    <div className="flex items-center gap-2">
-                      <input
-                        type={item.type}
-                        value={draft}
-                        onChange={(e) => setDraft(e.target.value)}
-                        onBlur={commitEdit}
-                        onKeyDown={(e) => e.key === "Enter" && commitEdit()}
-                        autoFocus
-                        {...(item.type === "number" ? { min: item.min, max: item.max } : {})}
-                        className="w-24 px-2 py-1 text-sm text-right rounded-lg border-2 border-clock-blue/40 bg-white focus:outline-none"
-                      />
-                      {item.unit && <span className="text-xs text-gray-400">{item.unit}</span>}
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => startEdit(item.key)}
-                      className="flex items-center gap-2 group"
-                    >
-                      <span className="text-sm font-bold text-clock-blue">
-                        {String(settings[item.key])}{item.unit ? ` ${item.unit}` : ""}
-                      </span>
-                      <svg className="w-3.5 h-3.5 text-gray-300 group-hover:text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                        <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
-                        <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
-                      </svg>
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            {/* みなし残業のサマリー */}
-            {group.section === "みなし残業管理" && (
-              <div className="mt-2 px-4 py-3 bg-blue-50 rounded-2xl space-y-1">
-                <p className="text-xs text-blue-300">
-                  累積（実打刻 − 給与計算用打刻）&gt; {settings.deemedOvertimeHours}時間 × {settings.alertThreshold}% = {alertAt}時間／月
-                </p>
-                <p className="text-xs text-clock-blue">
-                  月間 <span className="font-bold">{alertAt}時間</span> を超えるとアラートが発動します
-                </p>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-
-      {/* デバッグ：テスト打刻時刻 */}
-      <div className="px-6 pb-4">
-        <p className="text-xs font-bold text-gray-300 tracking-wide mb-2">デバッグ</p>
-        <div className="bg-gray-50 rounded-2xl overflow-hidden">
-          {/* 有効/無効トグル */}
-          <div className="flex items-center px-4 py-3.5 border-b border-gray-100">
-            <span className="text-sm text-gray-500 flex-1">テスト打刻時刻を有効にする</span>
-            <Toggle value={mockEnabled} onChange={() => toggleMockEnabled(!mockEnabled)} />
-          </div>
-          {/* 時刻入力 */}
-          <div className={`flex items-center px-4 py-3.5 gap-3 transition-opacity ${mockEnabled ? "opacity-100" : "opacity-30 pointer-events-none"}`}>
-            <span className="text-sm text-gray-500 flex-1">時刻</span>
-            <input
-              type="time"
-              value={mockTime}
-              onChange={(e) => applyMock(e.target.value)}
-              className="text-sm text-clock-blue font-bold bg-transparent focus:outline-none"
-            />
-          </div>
+      {/* 店舗セレクター */}
+      <div className="px-6 py-4 border-b border-gray-100 shrink-0">
+        <div className="relative inline-block">
+          <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+            </svg>
+          </span>
+          <select
+            value={selectedPageId}
+            onChange={(e) => setSelectedPageId(e.target.value)}
+            className="appearance-none pl-8 pr-7 py-1.5 text-sm font-bold text-white bg-gray-600 rounded-full focus:outline-none focus:ring-2 focus:ring-gray-400/40 cursor-pointer"
+          >
+            {stores.map((s) => (
+              <option key={s.id} value={s.id}>{s.storeName}</option>
+            ))}
+          </select>
+          <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-white/70">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+              <path d="M6 9l6 6 6-6" />
+            </svg>
+          </span>
         </div>
-        {mockEnabled && (
-          <p className="text-xs text-amber-400 mt-1.5 px-1">
-            ⚠ モック時刻使用中 — 打刻は {mockTime} として記録されます
-          </p>
-        )}
       </div>
 
-      {/* 保存ボタン */}
-      <div className="px-6 py-4 border-t border-gray-100">
-        <button
-          onClick={handleSave}
-          className={`w-full py-3 text-sm font-bold rounded-2xl transition-all duration-300 ${
-            saved ? "bg-green-400 text-white" : "bg-clock-blue text-white"
-          }`}
-        >
-          {saved ? "保存しました ✓" : "保存"}
-        </button>
-      </div>
+      {settingsLoading ? (
+        <div className="flex-1 flex items-center justify-center">
+          <svg className="w-6 h-6 animate-spin text-clock-blue" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+          </svg>
+        </div>
+      ) : (
+        <>
+          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+            {FIELDS.map((group) => (
+              <div key={group.section}>
+                <p className="text-xs font-bold text-gray-400 tracking-wide mb-0.5">{group.section}</p>
+                <p className="text-[11px] text-gray-300 mb-3">{group.desc}</p>
+
+                <div className="bg-slate-100 rounded-2xl overflow-hidden">
+                  {group.items.map((item, i) => (
+                    <div
+                      key={item.key}
+                      className={`flex items-center px-4 py-3.5 ${i !== group.items.length - 1 ? "border-b border-gray-100" : ""}`}
+                    >
+                      <span className="flex-1 text-sm text-gray-600">{item.label}</span>
+
+                      {editing === item.key ? (
+                        <div className="flex items-center gap-2">
+                          <input
+                            type={item.type}
+                            value={draft}
+                            onChange={(e) => setDraft(e.target.value)}
+                            onBlur={commitEdit}
+                            onKeyDown={(e) => e.key === "Enter" && commitEdit()}
+                            autoFocus
+                            {...(item.type === "number" ? { min: item.min, max: item.max } : {})}
+                            className="w-24 px-2 py-1 text-sm text-right rounded-lg border-2 border-clock-blue/40 bg-white focus:outline-none"
+                          />
+                          {item.unit && <span className="text-xs text-gray-400">{item.unit}</span>}
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => startEdit(item.key)}
+                          className="flex items-center gap-2 group"
+                        >
+                          <span className="text-sm font-bold text-clock-blue">
+                            {String(settings[item.key])}{item.unit ? ` ${item.unit}` : ""}
+                          </span>
+                          <svg className="w-3.5 h-3.5 text-gray-300 group-hover:text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                            <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+                            <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {group.section === "みなし残業管理" && (
+                  <div className="mt-2 px-4 py-3 bg-blue-50 rounded-2xl space-y-1">
+                    <p className="text-xs text-blue-300">
+                      累積（実打刻 − 給与計算用打刻）&gt; {settings.deemedOvertimeHours}時間 × {settings.alertThreshold}% = {alertAt}時間／月
+                    </p>
+                    <p className="text-xs text-clock-blue">
+                      月間 <span className="font-bold">{alertAt}時間</span> を超えるとアラートが発動します
+                    </p>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <div className="px-6 py-4 border-t border-gray-100">
+            <button
+              onClick={handleSave}
+              className={`w-full py-3 text-sm font-bold rounded-2xl transition-all duration-300 ${
+                saved ? "bg-green-400 text-white" : "bg-clock-blue text-white"
+              }`}
+            >
+              {saved ? "保存しました ✓" : "保存"}
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

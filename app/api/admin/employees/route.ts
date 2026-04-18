@@ -18,9 +18,9 @@ export async function POST(req: NextRequest) {
   const authError = verifyAdminCookie(req);
   if (authError) return authError;
 
-  const { name, employeeId, status } = await req.json();
+  const fields = await req.json();
   try {
-    const employee = await createEmployee(name, employeeId, status);
+    const employee = await createEmployee(fields);
     return NextResponse.json(employee);
   } catch (e: any) {
     const detail = e?.body ?? e?.message ?? String(e);

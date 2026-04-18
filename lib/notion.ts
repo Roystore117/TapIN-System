@@ -2,33 +2,151 @@ import { Client } from "@notionhq/client";
 
 const notion = new Client({ auth: process.env.NOTION_API_KEY });
 
+/**
+ * Notion DB プロパティ名の一元管理
+ * Notion 側で名前を変更したら、ここだけ書き換えれば全体に反映される
+ */
+const F = {
+  // ── 従業員マスタDB ────────────────
+  IDENTIFIER: "従業員識別子",
+  EMPLOYEE_NUMBER: "従業員番号",
+  LAST_NAME: "姓",
+  FIRST_NAME: "名",
+  STORE_NAME: "事業所名",
+  DEPARTMENT: "部門名",
+  JOB_TITLE: "職種名",
+  CONTRACT_TYPE: "契約職種",
+  STATUS: "ステータス",
+  RANK: "ランク",
+  NOMINATION_FEE: "指名料",
+  CAREER_TARGET: "キャリアアップ対象",
+  JOIN_TYPE: "中途or新卒",
+  JOIN_DATE: "入社時期",
+  CAREER_UPDATE_DATE: "キャリアアップ更新時期",
+  CAREER_INTERVIEW_DATE: "キャリアアップ面談時期",
+  PROBATION_SALARY: "試用期間給与",
+  REGULAR_SALARY: "正社員給与",
+  // ── 勤怠ログDB ────────────────────
+  TITLE: "タイトル",
+  EMPLOYEE_REL: "②従業員マスタDB_RM03P",
+  DATE: "日付",
+  CLOCK_IN: "出勤",
+  CLOCK_OUT: "退勤",
+  BREAK: "休憩",
+  ACTUAL_HOURS: "実働",
+  WORK_STATUS: "勤務状態",
+  NOTE: "備考",
+  APPROVED: "承認",
+  // ── 店舗設定DB ────────────────────
+  STORE_TITLE: "店舗名",
+  CLOSING_DAY: "定休曜日",
+  WORK_START: "始業標準時刻",
+  WORK_END: "終業標準時刻",
+  OVERTIME_HOURS: "みなし残業時間",
+  ALERT_THRESHOLD: "アラート閾値",
+  // ── 保健師の一言DB ────────────────
+  TIP_TEXT: "一言",
+  TIP_ENABLED: "有効",
+  // ── 時間外申請DB ───────────────────
+  EMPLOYEE_NAME: "従業員名",
+  APPLY_DATE: "申請日",
+  EARLY_REQUEST: "早出申請",
+  EARLY_TIME: "早出時刻",
+  EARLY_REASON: "早出理由",
+  OVERTIME_REQUEST: "残業申請",
+  OVERTIME_TIME: "残業時刻",
+  OVERTIME_REASON: "残業理由",
+} as const;
+
 export type Employee = {
   id: string;
   name: string;
+  store: string;
 };
 
 export type StampType = "出勤" | "退勤";
 
+export type EmployeeDBOptions = {
+  ranks: string[];
+  nominationFees: string[];
+  careerTargets: string[];
+  joinTypes: string[];
+  jobTitles: string[];
+  contractTypes: string[];
+  statuses: string[];
+};
+
+/** 従業員マスタDBの全 select option を取得 */
+export async function getEmployeeDBOptions(): Promise<EmployeeDBOptions> {
+  const db = await notion.databases.retrieve({ database_id: process.env.EMPLOYEE_DB_ID! }) as any;
+  const read = (name: string): string[] => {
+    const prop = db.properties?.[name];
+    if (!prop) return [];
+    if (prop.type === "select") return prop.select.options.map((o: any) => o.name);
+    if (prop.type === "status") return prop.status.options.map((o: any) => o.name);
+    return [];
+  };
+  return {
+    ranks:         read(F.RANK),
+    nominationFees: read(F.NOMINATION_FEE),
+    careerTargets:  read(F.CAREER_TARGET),
+    joinTypes:      read(F.JOIN_TYPE),
+    jobTitles:      read(F.JOB_TITLE),
+    contractTypes:  read(F.CONTRACT_TYPE),
+    statuses:       read(F.STATUS),
+  };
+}
+
+/** 店舗設定DBから {id: 店舗名} と {店舗名: id} の両方向マップを生成 */
+async function fetchStoreMap(): Promise<{ idToName: Record<string, string>; nameToId: Record<string, string> }> {
+  const res = await notion.databases.query({ database_id: process.env.STORE_SETTINGS_DB_ID! });
+  const idToName: Record<string, string> = {};
+  const nameToId: Record<string, string> = {};
+  res.results.forEach((page: any) => {
+    const name = page.properties[F.STORE_TITLE]?.title?.[0]?.plain_text ?? "";
+    if (name) {
+      idToName[page.id] = name;
+      nameToId[name] = page.id;
+    }
+  });
+  return { idToName, nameToId };
+}
+
+function readDepartmentFromRelation(prop: any, idToName: Record<string, string>): string {
+  const first = prop?.relation?.[0]?.id;
+  return first ? (idToName[first] ?? "") : "";
+}
+
 /** 従業員マスタを昇順で全件取得 */
 export async function getAllEmployees(): Promise<Employee[]> {
-  const response = await notion.databases.query({
-    database_id: process.env.EMPLOYEE_DB_ID!,
-    sorts: [{ property: "従業員ID", direction: "ascending" }],
-  });
+  const [{ idToName }, response] = await Promise.all([
+    fetchStoreMap(),
+    notion.databases.query({
+      database_id: process.env.EMPLOYEE_DB_ID!,
+      sorts: [{ property: F.EMPLOYEE_NUMBER, direction: "ascending" }],
+    }),
+  ]);
 
   return response.results
     .map((page: any) => {
-      let name = "不明";
+      let identifier = "";
+      let lastName = "";
+      let firstName = "";
       let status = "不明";
+      let store = "";
+      try { identifier = (page.properties[F.IDENTIFIER]?.title ?? []).map((t: any) => t.plain_text ?? t.text?.content ?? "").join("").replace(/[\n\r]/g, "").trim(); } catch {}
+      try { lastName = page.properties[F.LAST_NAME]?.rich_text?.[0]?.text?.content ?? ""; } catch {}
+      try { firstName = page.properties[F.FIRST_NAME]?.rich_text?.[0]?.text?.content ?? ""; } catch {}
       try {
-        name = page.properties["名前"].title[0].text.content;
+        status = page.properties[F.STATUS]?.status?.name
+          ?? page.properties[F.STATUS]?.select?.name
+          ?? "不明";
       } catch {}
-      try {
-        status = page.properties["ステータス"].status.name;
-      } catch {}
-      return { id: page.id, name, status };
+      try { store = readDepartmentFromRelation(page.properties[F.DEPARTMENT], idToName); } catch {}
+      const name = [lastName, firstName].filter(Boolean).join(" ") || identifier || "不明";
+      return { id: page.id, name, status, store };
     })
-    .filter((emp) => emp.status !== "退職"); // 退職者を除外
+    .filter((emp) => emp.status !== "退職");
 }
 
 /**
@@ -50,17 +168,39 @@ export function roundUpToHour(date: Date): Date {
 
 /** 従業員マスタを全件取得（管理者画面用・退職者含む） */
 export async function getAllEmployeesAdmin(): Promise<EmployeeAdmin[]> {
-  const response = await notion.databases.query({
-    database_id: process.env.EMPLOYEE_DB_ID!,
-    sorts: [{ property: "従業員ID", direction: "ascending" }],
-  });
+  const [{ idToName }, response] = await Promise.all([
+    fetchStoreMap(),
+    notion.databases.query({
+      database_id: process.env.EMPLOYEE_DB_ID!,
+      sorts: [{ property: F.EMPLOYEE_NUMBER, direction: "ascending" }],
+    }),
+  ]);
 
   return response.results.flatMap((page: any) => {
     try {
-      const name = page.properties["名前"].title[0]?.text.content ?? "不明";
-      const employeeId = page.properties["従業員ID"]?.rich_text?.[0]?.text?.content ?? "";
-      const status = page.properties["ステータス"]?.status?.name ?? "不明";
-      return [{ id: page.id, name, employeeId, status }];
+      const identifier    = (page.properties[F.IDENTIFIER]?.title ?? []).map((t: any) => t.plain_text ?? t.text?.content ?? "").join("").replace(/[\n\r]/g, "").trim();
+      const employeeNumber = page.properties[F.EMPLOYEE_NUMBER]?.rich_text?.[0]?.text?.content ?? "";
+      const lastName      = page.properties[F.LAST_NAME]?.rich_text?.[0]?.text?.content ?? "";
+      const firstName     = page.properties[F.FIRST_NAME]?.rich_text?.[0]?.text?.content ?? "";
+      const storeName     = page.properties[F.STORE_NAME]?.select?.name ?? "";
+      const department    = readDepartmentFromRelation(page.properties[F.DEPARTMENT], idToName);
+      const jobTitle      = page.properties[F.JOB_TITLE]?.select?.name ?? "";
+      const contractType  = page.properties[F.CONTRACT_TYPE]?.select?.name ?? "";
+      const status        = page.properties[F.STATUS]?.status?.name
+        ?? page.properties[F.STATUS]?.select?.name
+        ?? "不明";
+      const rank              = page.properties[F.RANK]?.select?.name ?? "";
+      const nominationFee     = page.properties[F.NOMINATION_FEE]?.select?.name ?? "";
+      const careerTarget      = page.properties[F.CAREER_TARGET]?.select?.name ?? "";
+      const joinType          = page.properties[F.JOIN_TYPE]?.select?.name ?? "";
+      const joinDate          = page.properties[F.JOIN_DATE]?.date?.start ?? "";
+      const careerUpdateDate  = page.properties[F.CAREER_UPDATE_DATE]?.date?.start ?? "";
+      const careerInterviewDate = page.properties[F.CAREER_INTERVIEW_DATE]?.date?.start ?? "";
+      const probationSalary     = page.properties[F.PROBATION_SALARY]?.number ?? null;
+      const regularSalary       = page.properties[F.REGULAR_SALARY]?.number ?? null;
+      const name  = [lastName, firstName].filter(Boolean).join(" ") || identifier;
+      const store = department;
+      return [{ id: page.id, identifier, employeeNumber, lastName, firstName, storeName, department, jobTitle, contractType, status, name, store, rank, nominationFee, careerTarget, joinType, joinDate, careerUpdateDate, careerInterviewDate, probationSalary, regularSalary }];
     } catch {
       return [];
     }
@@ -68,39 +208,103 @@ export async function getAllEmployeesAdmin(): Promise<EmployeeAdmin[]> {
 }
 
 /** 従業員を更新 */
-export async function updateEmployee(id: string, name: string, status: string): Promise<void> {
-  await notion.pages.update({
-    page_id: id,
-    properties: {
-      名前: { title: [{ text: { content: name } }] },
-      ステータス: { status: { name: status } },
-    },
-  });
+export async function updateEmployee(
+  id: string,
+  fields: Partial<{
+    identifier: string;
+    employeeNumber: string;
+    lastName: string;
+    firstName: string;
+    storeName: string;
+    department: string;
+    jobTitle: string;
+    contractType: string;
+    status: string;
+    rank: string;
+    nominationFee: string;
+    careerTarget: string;
+    joinType: string;
+    joinDate: string;
+    careerUpdateDate: string;
+    careerInterviewDate: string;
+    probationSalary: number | null;
+    regularSalary: number | null;
+  }>
+): Promise<void> {
+  const props: Record<string, any> = {};
+  if (fields.identifier         !== undefined) props[F.IDENTIFIER]            = { title:     [{ text: { content: fields.identifier } }] };
+  if (fields.employeeNumber     !== undefined) props[F.EMPLOYEE_NUMBER]       = { rich_text: [{ text: { content: fields.employeeNumber } }] };
+  if (fields.lastName           !== undefined) props[F.LAST_NAME]             = { rich_text: [{ text: { content: fields.lastName } }] };
+  if (fields.firstName          !== undefined) props[F.FIRST_NAME]            = { rich_text: [{ text: { content: fields.firstName } }] };
+  if (fields.storeName          !== undefined) props[F.STORE_NAME]            = { select: { name: fields.storeName } };
+  if (fields.department         !== undefined) {
+    const { nameToId } = await fetchStoreMap();
+    const relId = nameToId[fields.department];
+    props[F.DEPARTMENT] = { relation: relId ? [{ id: relId }] : [] };
+  }
+  if (fields.jobTitle           !== undefined) props[F.JOB_TITLE]             = { select: { name: fields.jobTitle } };
+  if (fields.contractType       !== undefined) props[F.CONTRACT_TYPE]         = { select: { name: fields.contractType } };
+  if (fields.status             !== undefined) props[F.STATUS]                = { select: { name: fields.status } };
+  if (fields.rank               !== undefined) props[F.RANK]                  = { select: { name: fields.rank } };
+  if (fields.nominationFee      !== undefined) props[F.NOMINATION_FEE]        = { select: { name: fields.nominationFee } };
+  if (fields.careerTarget       !== undefined) props[F.CAREER_TARGET]         = { select: { name: fields.careerTarget } };
+  if (fields.joinType           !== undefined) props[F.JOIN_TYPE]             = { select: { name: fields.joinType } };
+  if (fields.joinDate           !== undefined) props[F.JOIN_DATE]             = fields.joinDate ? { date: { start: fields.joinDate } } : { date: null };
+  if (fields.careerUpdateDate   !== undefined) props[F.CAREER_UPDATE_DATE]    = fields.careerUpdateDate ? { date: { start: fields.careerUpdateDate } } : { date: null };
+  if (fields.careerInterviewDate !== undefined) props[F.CAREER_INTERVIEW_DATE] = fields.careerInterviewDate ? { date: { start: fields.careerInterviewDate } } : { date: null };
+  if (fields.probationSalary     !== undefined) props[F.PROBATION_SALARY]     = { number: fields.probationSalary };
+  if (fields.regularSalary       !== undefined) props[F.REGULAR_SALARY]       = { number: fields.regularSalary };
+  if (Object.keys(props).length > 0) {
+    await notion.pages.update({ page_id: id, properties: props });
+  }
 }
 
 /** 従業員を新規追加 */
-export async function createEmployee(name: string, employeeId: string, status: string): Promise<EmployeeAdmin> {
+export async function createEmployee(fields: {
+  identifier: string;
+  employeeNumber: string;
+  lastName: string;
+  firstName: string;
+  storeName: string;
+  department: string;
+  jobTitle: string;
+  contractType: string;
+  status: string;
+}): Promise<EmployeeAdmin> {
+  const properties: Record<string, any> = {
+    [F.IDENTIFIER]:      { title:     [{ text: { content: fields.identifier } }] },
+    [F.EMPLOYEE_NUMBER]: { rich_text: [{ text: { content: fields.employeeNumber } }] },
+    [F.LAST_NAME]:       { rich_text: [{ text: { content: fields.lastName } }] },
+    [F.FIRST_NAME]:      { rich_text: [{ text: { content: fields.firstName } }] },
+    [F.STATUS]:          { select:    { name: fields.status } },
+  };
+  if (fields.storeName)    properties[F.STORE_NAME] = { select: { name: fields.storeName } };
+  if (fields.department) {
+    const { nameToId } = await fetchStoreMap();
+    const relId = nameToId[fields.department];
+    properties[F.DEPARTMENT] = { relation: relId ? [{ id: relId }] : [] };
+  }
+  if (fields.jobTitle)     properties[F.JOB_TITLE]     = { select: { name: fields.jobTitle } };
+  if (fields.contractType) properties[F.CONTRACT_TYPE] = { select: { name: fields.contractType } };
   const page = await notion.pages.create({
     parent: { database_id: process.env.EMPLOYEE_DB_ID! },
-    properties: {
-      名前: { title: [{ text: { content: name } }] },
-      従業員ID: { rich_text: [{ text: { content: employeeId } }] },
-      ステータス: { status: { name: status } },
-    },
+    properties,
   }) as any;
-  return { id: page.id, name, employeeId, status };
+  const name  = [fields.lastName, fields.firstName].filter(Boolean).join(" ") || fields.identifier;
+  const store = fields.department;
+  return { id: page.id, ...fields, name, store, rank: "", nominationFee: "", careerTarget: "", joinType: "", joinDate: "", careerUpdateDate: "", careerInterviewDate: "", probationSalary: null, regularSalary: null };
 }
 
 /** 保健師の一言を全件取得（有効=trueのみ・打刻画面用） */
 export async function getAllTips(): Promise<string[]> {
   const response = await notion.databases.query({
     database_id: process.env.TIPS_DB_ID!,
-    filter: { property: "有効", checkbox: { equals: true } },
+    filter: { property: F.TIP_ENABLED, checkbox: { equals: true } },
   });
 
   return response.results.flatMap((page: any) => {
     try {
-      const text = page.properties["一言"].title[0].text.content.replace(/\\n/g, "\n");
+      const text = page.properties[F.TIP_TEXT].title[0].text.content.replace(/\\n/g, "\n");
       return text ? [text] : [];
     } catch {
       return [];
@@ -116,22 +320,40 @@ export type Tip = {
 
 export type EmployeeAdmin = {
   id: string;
-  name: string;
-  employeeId: string;
+  identifier: string;
+  employeeNumber: string;
+  lastName: string;
+  firstName: string;
+  storeName: string;
+  department: string;
+  jobTitle: string;
+  contractType: string;
   status: string;
+  name: string;             // 姓+名（後方互換）
+  store: string;            // =department（後方互換）
+  // キャリア情報
+  rank: string;             // ランク
+  nominationFee: string;    // 指名料（select）
+  careerTarget: string;     // キャリアアップ対象
+  joinType: string;         // 中途or新卒
+  joinDate: string;         // 入社時期
+  careerUpdateDate: string; // キャリアアップ更新時期
+  careerInterviewDate: string; // キャリアアップ面談時期
+  probationSalary: number | null;   // 試用期間給与
+  regularSalary: number | null;     // 正社員給与
 };
 
 /** 保健師の一言を全件取得（有効・無効含む・管理者画面用） */
 export async function getAllTipsAdmin(): Promise<Tip[]> {
   const response = await notion.databases.query({
     database_id: process.env.TIPS_DB_ID!,
-    sorts: [{ property: "有効", direction: "descending" }],
+    sorts: [{ property: F.TIP_ENABLED, direction: "descending" }],
   });
 
   return response.results.flatMap((page: any) => {
     try {
-      const text = (page.properties["一言"].title[0]?.text.content ?? "").replace(/\\n/g, "\n");
-      const enabled = page.properties["有効"].checkbox ?? false;
+      const text = (page.properties[F.TIP_TEXT].title[0]?.text.content ?? "").replace(/\\n/g, "\n");
+      const enabled = page.properties[F.TIP_ENABLED].checkbox ?? false;
       return [{ id: page.id, text, enabled }];
     } catch {
       return [];
@@ -144,8 +366,8 @@ export async function createTip(text: string, enabled: boolean): Promise<Tip> {
   const page = await notion.pages.create({
     parent: { database_id: process.env.TIPS_DB_ID! },
     properties: {
-      一言: { title: [{ text: { content: text } }] },
-      有効: { checkbox: enabled },
+      [F.TIP_TEXT]:    { title: [{ text: { content: text } }] },
+      [F.TIP_ENABLED]: { checkbox: enabled },
     },
   }) as any;
   return { id: page.id, text, enabled };
@@ -156,8 +378,8 @@ export async function updateTip(id: string, text: string, enabled: boolean): Pro
   await notion.pages.update({
     page_id: id,
     properties: {
-      一言: { title: [{ text: { content: text } }] },
-      有効: { checkbox: enabled },
+      [F.TIP_TEXT]:    { title: [{ text: { content: text } }] },
+      [F.TIP_ENABLED]: { checkbox: enabled },
     },
   });
 }
@@ -168,8 +390,6 @@ export type PayrollSettings = {
   endTime: string;          // "HH:MM"
   deemedOvertimeHours: number;
   alertThreshold: number;
-  autoSwitch: boolean;      // 時刻で出退勤デフォルトを自動切替
-  switchTime: string;       // "HH:MM" 切替時刻
 };
 
 const PAYROLL_SETTINGS_DEFAULTS: Omit<PayrollSettings, "id"> = {
@@ -177,31 +397,18 @@ const PAYROLL_SETTINGS_DEFAULTS: Omit<PayrollSettings, "id"> = {
   endTime: "18:00",
   deemedOvertimeHours: 30,
   alertThreshold: 80,
-  autoSwitch: true,
-  switchTime: "12:00",
 };
 
-/** 給与計算設定を取得（レコードがなければデフォルト値を返す） */
-export async function getPayrollSettings(): Promise<PayrollSettings> {
-  const response = await notion.databases.query({
-    database_id: process.env.PAYROLL_SETTINGS_DB_ID!,
-    page_size: 1,
-  });
-
-  if (response.results.length === 0) {
-    return { id: "", ...PAYROLL_SETTINGS_DEFAULTS };
-  }
-
-  const page = response.results[0] as any;
+/** 給与計算設定を特定店舗ページから取得 */
+export async function getPayrollSettings(pageId: string): Promise<PayrollSettings> {
+  const page = await notion.pages.retrieve({ page_id: pageId }) as any;
   try {
     return {
       id: page.id,
-      startTime:            page.properties["始業標準時刻"]?.rich_text?.[0]?.text?.content ?? PAYROLL_SETTINGS_DEFAULTS.startTime,
-      endTime:              page.properties["終業標準時刻"]?.rich_text?.[0]?.text?.content ?? PAYROLL_SETTINGS_DEFAULTS.endTime,
-      deemedOvertimeHours:  page.properties["みなし残業時間"]?.number ?? PAYROLL_SETTINGS_DEFAULTS.deemedOvertimeHours,
-      alertThreshold:       page.properties["アラート閾値"]?.number   ?? PAYROLL_SETTINGS_DEFAULTS.alertThreshold,
-      autoSwitch:           page.properties["自動切替"]?.checkbox     ?? PAYROLL_SETTINGS_DEFAULTS.autoSwitch,
-      switchTime:           page.properties["切替時刻"]?.rich_text?.[0]?.text?.content ?? PAYROLL_SETTINGS_DEFAULTS.switchTime,
+      startTime:            page.properties[F.WORK_START]?.rich_text?.[0]?.text?.content ?? PAYROLL_SETTINGS_DEFAULTS.startTime,
+      endTime:              page.properties[F.WORK_END]?.rich_text?.[0]?.text?.content ?? PAYROLL_SETTINGS_DEFAULTS.endTime,
+      deemedOvertimeHours:  page.properties[F.OVERTIME_HOURS]?.number ?? PAYROLL_SETTINGS_DEFAULTS.deemedOvertimeHours,
+      alertThreshold:       page.properties[F.ALERT_THRESHOLD]?.number   ?? PAYROLL_SETTINGS_DEFAULTS.alertThreshold,
     };
   } catch {
     return { id: page.id, ...PAYROLL_SETTINGS_DEFAULTS };
@@ -216,12 +423,10 @@ export async function updatePayrollSettings(
   await notion.pages.update({
     page_id: id,
     properties: {
-      始業標準時刻:       { rich_text: [{ text: { content: settings.startTime } }] },
-      終業標準時刻:       { rich_text: [{ text: { content: settings.endTime } }] },
-      みなし残業時間:     { number: settings.deemedOvertimeHours },
-      アラート閾値:       { number: settings.alertThreshold },
-      自動切替:           { checkbox: settings.autoSwitch },
-      切替時刻:           { rich_text: [{ text: { content: settings.switchTime } }] },
+      [F.WORK_START]:      { rich_text: [{ text: { content: settings.startTime } }] },
+      [F.WORK_END]:        { rich_text: [{ text: { content: settings.endTime } }] },
+      [F.OVERTIME_HOURS]:  { number: settings.deemedOvertimeHours },
+      [F.ALERT_THRESHOLD]: { number: settings.alertThreshold },
     },
   });
 }
@@ -236,36 +441,33 @@ export async function getTodayPunches(employeeId: string): Promise<PunchRecord[]
   const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
   const now = new Date();
   const jstNow = new Date(now.getTime() + JST_OFFSET_MS);
-  const jstMidnightUTC = new Date(
-    Date.UTC(jstNow.getUTCFullYear(), jstNow.getUTCMonth(), jstNow.getUTCDate()) - JST_OFFSET_MS
-  );
-  const nextMidnightUTC = new Date(jstMidnightUTC.getTime() + 24 * 60 * 60 * 1000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const todayStr = `${jstNow.getUTCFullYear()}-${pad(jstNow.getUTCMonth() + 1)}-${pad(jstNow.getUTCDate())}`;
 
   const response = await notion.databases.query({
-    database_id: process.env.DATABASE_ID!,
+    database_id: process.env.TIMELOG_DB_ID!,
     filter: {
       and: [
-        { property: "従業員", relation: { contains: employeeId } },
-        { property: "実打刻", date: { on_or_after: jstMidnightUTC.toISOString() } },
-        { property: "実打刻", date: { before: nextMidnightUTC.toISOString() } },
+        { property: F.EMPLOYEE_REL, relation: { contains: employeeId } },
+        { property: F.DATE, date: { equals: todayStr } },
       ],
     },
-    sorts: [{ property: "実打刻", direction: "ascending" }],
   });
 
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return response.results.flatMap((page: any) => {
-    try {
-      const type = page.properties["打刻種別"]?.select?.name as StampType;
-      const isoStr = page.properties["実打刻"]?.date?.start;
-      if (!type || !isoStr) return [];
-      const jstDate = new Date(new Date(isoStr).getTime() + JST_OFFSET_MS);
-      const timeStr = `${pad(jstDate.getUTCHours())}:${pad(jstDate.getUTCMinutes())}`;
-      return [{ type, timeStr }];
-    } catch {
-      return [];
+  const results: PunchRecord[] = [];
+  for (const page of response.results as any[]) {
+    const clockInISO  = page.properties[F.CLOCK_IN]?.date?.start;
+    const clockOutISO = page.properties[F.CLOCK_OUT]?.date?.start;
+    if (clockInISO) {
+      const t = new Date(new Date(clockInISO).getTime() + JST_OFFSET_MS);
+      results.push({ type: "出勤", timeStr: `${pad(t.getUTCHours())}:${pad(t.getUTCMinutes())}` });
     }
-  });
+    if (clockOutISO) {
+      const t = new Date(new Date(clockOutISO).getTime() + JST_OFFSET_MS);
+      results.push({ type: "退勤", timeStr: `${pad(t.getUTCHours())}:${pad(t.getUTCMinutes())}` });
+    }
+  }
+  return results;
 }
 
 /** 時間外申請をNotionに書き込む */
@@ -283,110 +485,312 @@ export async function createOvertimeRequest(data: {
   await notion.pages.create({
     parent: { database_id: process.env.OVERTIME_REQUEST_DB_ID! },
     properties: {
-      タイトル:   { title: [{ text: { content: title } }] },
-      従業員名:   { rich_text: [{ text: { content: data.employeeName } }] },
-      申請日:     { date: { start: data.applyDate } },
-      早出申請:   { checkbox: data.earlyArrival },
-      早出時刻:   { rich_text: [{ text: { content: data.earlyTime } }] },
-      早出理由:   { rich_text: [{ text: { content: data.earlyReason } }] },
-      残業申請:   { checkbox: data.overtime },
-      残業時刻:   { rich_text: [{ text: { content: data.overtimeTime } }] },
-      残業理由:   { rich_text: [{ text: { content: data.overtimeReason } }] },
-      ステータス: { status: { name: "未対応" } },
+      [F.TITLE]:            { title: [{ text: { content: title } }] },
+      [F.EMPLOYEE_NAME]:    { rich_text: [{ text: { content: data.employeeName } }] },
+      [F.APPLY_DATE]:       { date: { start: data.applyDate } },
+      [F.EARLY_REQUEST]:    { checkbox: data.earlyArrival },
+      [F.EARLY_TIME]:       { rich_text: [{ text: { content: data.earlyTime } }] },
+      [F.EARLY_REASON]:     { rich_text: [{ text: { content: data.earlyReason } }] },
+      [F.OVERTIME_REQUEST]: { checkbox: data.overtime },
+      [F.OVERTIME_TIME]:    { rich_text: [{ text: { content: data.overtimeTime } }] },
+      [F.OVERTIME_REASON]:  { rich_text: [{ text: { content: data.overtimeReason } }] },
+      [F.STATUS]:           { status: { name: "未対応" } },
     },
   });
 }
 
-/** 打刻ログをNotionに書き込む */
-export async function registerTimestamp(
+export type MonthlyRecord = {
+  id: string;          // Notion page ID
+  date: string;        // "YYYY-MM-DD"
+  clockIn: string;     // "HH:MM" or ""
+  clockOut: string;    // "HH:MM" or ""
+  break: string;       // "2.5" or ""
+  actualHours: number | null;  // 実働（Notion formula）
+  workStatus: string;  // 勤務状態
+  note: string;        // 備考
+  approved: boolean;   // 承認
+};
+
+/** 指定月の勤怠レコードを全件取得 */
+export async function getMonthlyRecords(
+  employeePageId: string,
+  year: number,
+  month: number
+): Promise<MonthlyRecord[]> {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const startDate = `${year}-${pad(month)}-01`;
+  const lastDay = new Date(year, month, 0).getDate();
+  const endDate = `${year}-${pad(month)}-${pad(lastDay)}`;
+  const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+
+  const response = await notion.databases.query({
+    database_id: process.env.TIMELOG_DB_ID!,
+    filter: {
+      and: [
+        { property: F.EMPLOYEE_REL, relation: { contains: employeePageId } },
+        { property: F.DATE, date: { on_or_after: startDate } },
+        { property: F.DATE, date: { on_or_before: endDate } },
+      ],
+    },
+    sorts: [{ property: F.DATE, direction: "ascending" }],
+  });
+
+  return (response.results as any[]).map((page) => {
+    const toJstTime = (iso: string | undefined): string => {
+      if (!iso) return "";
+      const t = new Date(new Date(iso).getTime() + JST_OFFSET_MS);
+      return `${pad(t.getUTCHours())}:${pad(t.getUTCMinutes())}`;
+    };
+
+    const date = page.properties[F.DATE]?.date?.start ?? "";
+    const clockIn = toJstTime(page.properties[F.CLOCK_IN]?.date?.start);
+    const clockOut = toJstTime(page.properties[F.CLOCK_OUT]?.date?.start);
+    const breakRaw = page.properties[F.BREAK];
+    const breakVal = breakRaw?.select?.name
+      ?? (breakRaw?.number != null ? String(breakRaw.number) : null)
+      ?? breakRaw?.rich_text?.[0]?.text?.content
+      ?? "";
+    const actualHours = page.properties[F.ACTUAL_HOURS]?.formula?.number ?? null;
+    const workStatus = page.properties[F.WORK_STATUS]?.select?.name ?? "";
+    const note = page.properties[F.NOTE]?.rich_text?.[0]?.text?.content ?? "";
+    const approved = page.properties[F.APPROVED]?.select?.name === "承認済み"
+      || page.properties[F.APPROVED]?.checkbox === true;
+
+    return { id: page.id, date, clockIn, clockOut, break: breakVal, actualHours, workStatus, note, approved };
+  });
+}
+
+export type StoreSettings = {
+  id: string;
+  storeName: string;
+  closingDay: number; // 0=日 1=月 2=火 3=水 4=木 5=金 6=土
+};
+
+const DOW_MAP: Record<string, number> = { 日: 0, 月: 1, 火: 2, 水: 3, 木: 4, 金: 5, 土: 6 };
+
+/** 店舗設定を全件取得 */
+export async function getStoreSettings(): Promise<StoreSettings[]> {
+  const response = await notion.databases.query({
+    database_id: process.env.STORE_SETTINGS_DB_ID!,
+  });
+
+  return (response.results as any[]).flatMap((page) => {
+    try {
+      const storeName = page.properties[F.STORE_TITLE].title[0]?.text?.content ?? "";
+      const closingDayStr = page.properties[F.CLOSING_DAY]?.select?.name ?? "";
+      const closingDay = DOW_MAP[closingDayStr] ?? 2;
+      return [{ id: page.id, storeName, closingDay }];
+    } catch {
+      return [];
+    }
+  });
+}
+
+const DOW_NAMES = ["日", "月", "火", "水", "木", "金", "土"];
+
+/** 店舗設定の定休曜日を更新 */
+export async function updateStoreClosingDay(pageId: string, closingDay: number): Promise<void> {
+  await notion.pages.update({
+    page_id: pageId,
+    properties: {
+      [F.CLOSING_DAY]: { select: { name: DOW_NAMES[closingDay] } },
+    },
+  });
+}
+
+/** 月次レコードを更新 */
+export async function updateMonthlyRecord(
   pageId: string,
-  employeeName: string,
-  type: StampType,
-  mockTime?: string,          // "HH:MM" 形式（デバッグ用）
-  standardStartTime?: string, // "HH:MM" 形式（給与計算設定から）
-  standardEndTime?: string    // "HH:MM" 形式（給与計算設定から）
+  date: string, // "YYYY-MM-DD" — 時刻のISO変換に使用
+  updates: {
+    newDate?: string;    // 日付移動（YYYY-MM-DD）
+    clockIn?: string;    // "HH:MM" JST、"" でクリア
+    clockOut?: string;
+    break?: string;
+    workStatus?: string;
+    note?: string;
+  }
 ): Promise<void> {
-  // 純粋なUTC演算でJST時刻を扱う（toLocaleStringは環境依存のため使用しない）
+  const props: Record<string, any> = {};
+
+  if (updates.newDate !== undefined) {
+    props[F.DATE] = { date: { start: updates.newDate } };
+  }
+
+  if (updates.clockIn !== undefined) {
+    props[F.CLOCK_IN] = updates.clockIn
+      ? { date: { start: new Date(`${date}T${updates.clockIn}:00+09:00`).toISOString() } }
+      : { date: null };
+  }
+  if (updates.clockOut !== undefined) {
+    props[F.CLOCK_OUT] = updates.clockOut
+      ? { date: { start: new Date(`${date}T${updates.clockOut}:00+09:00`).toISOString() } }
+      : { date: null };
+  }
+  if (updates.break !== undefined) {
+    props[F.BREAK] = updates.break ? { select: { name: updates.break } } : { select: null };
+  }
+  if (updates.workStatus !== undefined) {
+    props[F.WORK_STATUS] = updates.workStatus ? { select: { name: updates.workStatus } } : { select: null };
+  }
+  if (updates.note !== undefined) {
+    props[F.NOTE] = { rich_text: updates.note ? [{ text: { content: updates.note } }] : [] };
+  }
+
+  if (Object.keys(props).length > 0) {
+    await notion.pages.update({ page_id: pageId, properties: props });
+  }
+}
+
+/** 公休・有給レコードを作成 → 作成したページIDを返す */
+export async function createHolidayRecord(
+  employeePageId: string,
+  employeeName: string,
+  date: string, // "YYYY-MM-DD"
+  workType: "公休" | "有給" = "公休"
+): Promise<string> {
+  const page = await notion.pages.create({
+    parent: { database_id: process.env.TIMELOG_DB_ID! },
+    properties: {
+      [F.TITLE]:        { title: [{ text: { content: `${date} ${employeeName}` } }] },
+      [F.EMPLOYEE_REL]: { relation: [{ id: employeePageId }] },
+      [F.DATE]:         { date: { start: date } },
+      [F.WORK_STATUS]:  { select: { name: workType } },
+    },
+  }) as any;
+  return page.id as string;
+}
+
+/** 公休レコードを削除（アーカイブ） */
+export async function deleteHolidayRecord(pageId: string): Promise<void> {
+  await notion.pages.update({ page_id: pageId, archived: true });
+}
+
+export type HolidayEntry = {
+  pageId: string;
+  date: string;          // "YYYY-MM-DD"
+  employeePageId: string;
+  type: "公休" | "有給";
+};
+
+/** 指定月の公休・有給レコードを全件取得 */
+export async function getMonthHolidayRecords(year: number, month: number): Promise<HolidayEntry[]> {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const startDate = `${year}-${pad(month)}-01`;
+  const endDate = `${year}-${pad(month)}-${pad(new Date(year, month, 0).getDate())}`;
+
+  const response = await notion.databases.query({
+    database_id: process.env.TIMELOG_DB_ID!,
+    filter: {
+      and: [
+        { property: F.DATE, date: { on_or_after: startDate } },
+        { property: F.DATE, date: { on_or_before: endDate } },
+        { or: [
+          { property: F.WORK_STATUS, select: { equals: "公休" } },
+          { property: F.WORK_STATUS, select: { equals: "有給" } },
+        ]},
+      ],
+    },
+  });
+
+  return (response.results as any[]).flatMap((page) => {
+    try {
+      const date = page.properties[F.DATE]?.date?.start ?? "";
+      const employeePageId = page.properties[F.EMPLOYEE_REL]?.relation?.[0]?.id ?? "";
+      const type = page.properties[F.WORK_STATUS]?.select?.name as "公休" | "有給";
+      if (!date || !employeePageId || (type !== "公休" && type !== "有給")) return [];
+      return [{ pageId: page.id, date, employeePageId, type }];
+    } catch {
+      return [];
+    }
+  });
+}
+
+/** JST時刻を計算するユーティリティ */
+function resolveNow(mockTime?: string): Date {
   const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
   let now = new Date();
-
-  // デバッグ用モック時刻（"HH:MM"を今日のJST日付に適用）
   if (mockTime) {
     const [h, m] = mockTime.split(":").map(Number);
     const jstMs = now.getTime() + JST_OFFSET_MS;
-    const msIntoJstDay = jstMs % 86400000;
-    const jstMidnightUTC = now.getTime() - msIntoJstDay;
+    const jstMidnightUTC = now.getTime() - (jstMs % 86400000);
     now = new Date(jstMidnightUTC + h * 3600000 + m * 60000);
   }
+  return now;
+}
 
-  // JST時刻コンポーネントをUTCメソッドで取得（環境非依存）
-  const jstDateObj = new Date(now.getTime() + JST_OFFSET_MS);
-  const jstH = jstDateObj.getUTCHours();
-  const jstM = jstDateObj.getUTCMinutes();
-
-  // タイトル用フォーマット
+/** 出勤打刻：新規レコードを作成 */
+export async function registerClockIn(
+  pageId: string,
+  employeeName: string,
+  mockTime?: string
+): Promise<void> {
+  const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+  const now = resolveNow(mockTime);
+  const jst = new Date(now.getTime() + JST_OFFSET_MS);
   const pad = (n: number) => String(n).padStart(2, "0");
-  const titleText = `${jstDateObj.getUTCFullYear()}-${pad(jstDateObj.getUTCMonth() + 1)}-${pad(jstDateObj.getUTCDate())} ${pad(jstH)}:${pad(jstM)} ${employeeName} ${type}`;
+  const dateStr = `${jst.getUTCFullYear()}-${pad(jst.getUTCMonth() + 1)}-${pad(jst.getUTCDate())}`;
 
-  // 給与計算打刻のロジック
-  // 出勤: 始業標準時刻より前の打刻 → 始業標準時刻、以降は実打刻
-  // 退勤: 常に実打刻
-  const [STANDARD_START_HOUR, STANDARD_START_MIN] = (standardStartTime ?? "09:00")
-    .split(":").map(Number);
+  // 同日に出勤済み・退勤未入力のレコードがあればエラー
+  const existing = await notion.databases.query({
+    database_id: process.env.TIMELOG_DB_ID!,
+    filter: {
+      and: [
+        { property: F.EMPLOYEE_REL, relation: { contains: pageId } },
+        { property: F.DATE, date: { equals: dateStr } },
+      ],
+    },
+  });
+  const alreadyIn = (existing.results as any[]).some(
+    (p) => p.properties[F.CLOCK_IN]?.date?.start && !p.properties[F.CLOCK_OUT]?.date?.start
+  );
+  if (alreadyIn) throw new Error("ALREADY_CLOCKED_IN");
 
-  const jstMs = now.getTime() + JST_OFFSET_MS;
-  const msIntoDay = jstMs % 86400000;
-  const jstMidnightUTC = now.getTime() - msIntoDay;
+  await notion.pages.create({
+    parent: { database_id: process.env.TIMELOG_DB_ID! },
+    properties: {
+      [F.TITLE]:        { title: [{ text: { content: `${dateStr} ${employeeName}` } }] },
+      [F.EMPLOYEE_REL]: { relation: [{ id: pageId }] },
+      [F.DATE]:         { date: { start: dateStr } },
+      [F.CLOCK_IN]:     { date: { start: now.toISOString() } },
+      [F.WORK_STATUS]:  { select: { name: "出勤" } },
+    },
+  });
+}
 
-  let payrollUTC = now;
-  if (type === "出勤") {
-    // 始業標準時刻より前 → 始業標準時刻に丸める
-    if (jstH < STANDARD_START_HOUR || (jstH === STANDARD_START_HOUR && jstM < STANDARD_START_MIN)) {
-      payrollUTC = new Date(jstMidnightUTC + STANDARD_START_HOUR * 3600000 + STANDARD_START_MIN * 60000);
-    }
-  } else {
-    // 退勤: 終業標準時刻より後 → 終業標準時刻にキャップ
-    const [STANDARD_END_HOUR, STANDARD_END_MIN] = (standardEndTime ?? "18:00").split(":").map(Number);
-    if (jstH > STANDARD_END_HOUR || (jstH === STANDARD_END_HOUR && jstM >= STANDARD_END_MIN)) {
-      payrollUTC = new Date(jstMidnightUTC + STANDARD_END_HOUR * 3600000 + STANDARD_END_MIN * 60000);
-    }
-  }
+/** 退勤打刻：同日の出勤済みレコードを更新 */
+export async function registerClockOut(
+  pageId: string,
+  mockTime?: string
+): Promise<void> {
+  const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+  const now = resolveNow(mockTime);
+  const jst = new Date(now.getTime() + JST_OFFSET_MS);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const dateStr = `${jst.getUTCFullYear()}-${pad(jst.getUTCMonth() + 1)}-${pad(jst.getUTCDate())}`;
 
-  const baseProperties: Record<string, any> = {
-    タイトル: {
-      title: [{ text: { content: titleText } }],
+  // 同日・同従業員のレコードを取得
+  const response = await notion.databases.query({
+    database_id: process.env.TIMELOG_DB_ID!,
+    filter: {
+      and: [
+        { property: F.EMPLOYEE_REL, relation: { contains: pageId } },
+        { property: F.DATE, date: { equals: dateStr } },
+      ],
     },
-    実打刻: {
-      date: { start: now.toISOString() },
-    },
-    給与計算打刻: {
-      date: { start: payrollUTC.toISOString() },
-    },
-    打刻種別: {
-      select: { name: type },
-    },
-    従業員: {
-      relation: [{ id: pageId }],
-    },
-  };
+  });
 
-  // まず全プロパティで試み、「給与計算用日付」が未作成の場合はスキップして再試行
-  try {
-    await notion.pages.create({
-      parent: { database_id: process.env.DATABASE_ID! },
-      properties: baseProperties,
-    });
-  } catch (err: any) {
-    const msg: string = err?.body ?? err?.message ?? "";
-    if (msg.includes("給与計算打刻") || msg.includes("payroll") || msg.includes("property")) {
-      console.warn("給与計算打刻プロパティが見つからないためスキップして再試行します");
-      const { 給与計算打刻: _omit, ...propertiesWithout } = baseProperties;
-      await notion.pages.create({
-        parent: { database_id: process.env.DATABASE_ID! },
-        properties: propertiesWithout,
-      });
-    } else {
-      throw err;
-    }
-  }
+  // 出勤済み・退勤未入力のレコードを探す
+  const target = (response.results as any[]).find(
+    (p) => p.properties[F.CLOCK_IN]?.date?.start && !p.properties[F.CLOCK_OUT]?.date?.start
+  );
+  if (!target) throw new Error("ALREADY_CLOCKED_OUT");
+
+  await notion.pages.update({
+    page_id: target.id,
+    properties: {
+      [F.CLOCK_OUT]: { date: { start: now.toISOString() } },
+      [F.BREAK]:     { number: 2.5 },
+    },
+  });
 }

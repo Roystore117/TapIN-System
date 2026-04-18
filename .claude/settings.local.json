@@ -10,7 +10,16 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(gh repo:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(wc:*)",
+      "Bash(git -C /c/Users/roycr/WARP/hplus_clock-in_v1 ls-files --others --cached --exclude-standard)",
+      "Bash(grep -v \"//.*uuid\")",
+      "Bash(npx tsx -e ' *)",
+      "Bash(node -e ' *)",
+      "Read(//c/Users/roycr/.claude//**)",
+      "Read(//c/Users/roycr/.claude/**)",
+      "Bash(iconv -f cp932 -t utf-8)",
+      "Bash(iconv -f cp932 -t utf-8 \"c:/Users/roycr/RoyFolder/06_Hplus/01_Tap-IN/03_MFインポート/インプット用.csv\")"
     ]
   }
 }

@@ -1,5 +1,11 @@
 # Tap-IN 開発者ノート
 
+## Claude への指示
+
+- 開発中に気づいたバグ・設計ミス・UXの問題・教訓は、メモリ（feedback または project タイプ）に記録すること
+- 「なぜそうなったか」「次にどう防ぐか」まで含めて記録すること
+- プロジェクトをまたいで活かせる知見は特に積極的に保存すること
+
 ## プロジェクト概要
 
 美容院向け勤怠打刻Webアプリ。Next.js (App Router) + Tailwind CSS + Notion API。
@@ -44,8 +50,11 @@
 |--------------|---------|
 | GET /api/admin/tips | 保健師の一言 全件取得 |
 | PATCH /api/admin/tips/[id] | 保健師の一言 更新 |
-| GET /api/admin/employees | 従業員マスタ 取得（未実装） |
-| GET /api/admin/payroll | 給与計算設定 取得（未実装） |
+| GET /api/admin/employees | 従業員マスタ 取得 |
+| GET /api/admin/payroll | 店舗別設定 取得 |
+| GET /api/admin/store-settings | 店舗一覧 取得 |
+| GET /api/admin/holiday | 公休・有給レコード 取得 |
+| PATCH /api/admin/records/[pageId] | 月次レコード 更新 |
 
 ### 保護不要のAPIルート（従業員向け）
 
@@ -62,9 +71,11 @@
 | 変数名 | 用途 |
 |--------|------|
 | NOTION_API_KEY | Notion APIキー |
-| DATABASE_ID | 打刻ログDB |
+| TIMELOG_DB_ID | 勤怠ログDB（打刻・公休・有給） |
 | EMPLOYEE_DB_ID | 従業員マスタDB |
+| STORE_SETTINGS_DB_ID | 店舗設定DB（店舗名・定休曜日・給与計算設定） |
 | TIPS_DB_ID | 保健師の一言DB |
+| OVERTIME_REQUEST_DB_ID | 時間外申請DB |
 | ADMIN_PASSWORD | 管理者パスワード |
 
 ---
@@ -81,14 +92,7 @@
 
 | ファイル | 該当箇所 |
 |---------|---------|
-| `components/PayrollSettings.tsx` | デバッグセクション（テスト打刻時刻UI） |
+| `components/DebugSettings.tsx` | テスト打刻時刻UI（管理画面デバッグタブ） |
 | `app/page.tsx` | `localStorage.getItem("debug_mock_time")` をAPIに送る処理 |
 | `app/api/timestamp/route.ts` | `mockTime` パラメーターの受け取り |
 | `lib/notion.ts` | `registerTimestamp()` の `mockTime` 引数とその適用ロジック |
-
-## ⚠ 本番前にNotion連携が必要なハードコーディング箇所
-
-| ファイル | 内容 |
-|---------|------|
-| `components/PayrollSettings.tsx` | 始業・終業時刻、みなし残業時間の設定値 |
-| `lib/notion.ts` | `STANDARD_START_HOUR/MIN`（始業標準時刻） |
