@@ -39,6 +39,7 @@ export default function HolidaySettings() {
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [empLoading, setEmpLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [closingDay, setClosingDay] = useState(2); // 0=日 … 6=土
   const [storeSettingsMap, setStoreSettingsMap] = useState<Record<string, { id: string; closingDay: number }>>({});
@@ -75,7 +76,7 @@ export default function HolidaySettings() {
         data.forEach((s) => { map[s.storeName] = { id: s.id, closingDay: s.closingDay }; });
         setStoreSettingsMap(map);
       })
-      .catch(() => {});
+      .catch(() => setLoadError(true));
   }, []);
 
   // 従業員一覧取得
@@ -95,7 +96,7 @@ export default function HolidaySettings() {
           if (first) setSelectedId(first.id);
         }
       })
-      .catch(() => {})
+      .catch(() => setLoadError(true))
       .finally(() => setEmpLoading(false));
   }, []);
 
@@ -112,7 +113,7 @@ export default function HolidaySettings() {
         });
         setHolidayMap(map);
       })
-      .catch((e) => { if (e?.name !== "AbortError") setHolidayMap({}); });
+      .catch((e) => { if (e?.name !== "AbortError") { setHolidayMap({}); setLoadError(true); } });
     return () => controller.abort();
   }, [year, month]);
 
@@ -264,6 +265,29 @@ export default function HolidaySettings() {
     const idx = filteredEmployees.findIndex((e) => e.id === empId);
     return EMP_COLORS[idx % EMP_COLORS.length] ?? EMP_COLORS[0];
   };
+
+  if (loadError) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center gap-4">
+        <p className="text-sm text-gray-500">取得に失敗しました</p>
+        <button onClick={() => window.location.reload()} className="px-5 py-2 text-sm font-bold text-clock-blue border border-clock-blue/30 rounded-full hover:bg-clock-blue/5">
+          再読み込み
+        </button>
+      </div>
+    );
+  }
+
+  if (empLoading) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center gap-3">
+        <svg className="w-7 h-7 animate-spin text-clock-blue" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+        </svg>
+        <p className="text-[10px] font-bold text-gray-400 tracking-[0.2em]">NOTION 連携中</p>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full flex flex-col">
@@ -468,7 +492,7 @@ export default function HolidaySettings() {
                               {d}
                             </span>
                             {isClosingDay && (
-                              <span className="text-[13px] font-bold text-orange-300 bg-orange-100 rounded-full px-2.5 py-0.5 leading-none shrink-0">
+                              <span className="text-[10px] font-bold text-orange-300 bg-orange-100 rounded-full px-2 py-0.5 leading-none shrink-0">
                                 定休日
                               </span>
                             )}
@@ -497,7 +521,7 @@ export default function HolidaySettings() {
                                     else setPendingDelete(key);
                                   }}
                                   onBlur={() => setPendingDelete(null)}
-                                  className={`text-[13px] font-bold rounded-full px-2.5 py-0.5 leading-none shrink-0 transition-all ${
+                                  className={`text-[10px] font-bold rounded-full px-2 py-0.5 leading-none shrink-0 transition-all ${
                                     isSaving ? "opacity-40 cursor-wait" :
                                     isPending ? "bg-red-400 text-white scale-105 cursor-pointer" :
                                     `cursor-grab active:cursor-grabbing ${entry.type === "有給" ? "bg-emerald-500 text-white hover:opacity-70" : `${c.pill} hover:opacity-70`}`

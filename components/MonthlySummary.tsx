@@ -34,10 +34,12 @@ export default function MonthlySummary() {
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [empLoading, setEmpLoading] = useState(true);
+  const [empError, setEmpError] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const [records, setRecords] = useState<MonthlyRecord[]>([]);
   const [recordsLoading, setRecordsLoading] = useState(false);
+  const [recordsError, setRecordsError] = useState(false);
 
   // 店舗ごとの定休曜日 (0=日…6=土)
   const [storeClosingDay, setStoreClosingDay] = useState<number | null>(null);
@@ -67,7 +69,7 @@ export default function MonthlySummary() {
           if (first) setSelectedId(first.id);
         }
       })
-      .catch(() => {})
+      .catch(() => setEmpError(true))
       .finally(() => setEmpLoading(false));
   }, []);
 
@@ -87,10 +89,11 @@ export default function MonthlySummary() {
   // 月次レコード取得
   const fetchRecords = (id: string, y: number, m: number, signal?: AbortSignal) => {
     setRecordsLoading(true);
+    setRecordsError(false);
     return fetch(`/api/admin/monthly?employeeId=${id}&year=${y}&month=${m}`, { signal })
       .then((r) => r.ok ? r.json() : Promise.reject())
       .then((data: MonthlyRecord[]) => setRecords(data))
-      .catch((e) => { if (e?.name !== "AbortError") setRecords([]); })
+      .catch((e) => { if (e?.name !== "AbortError") { setRecords([]); setRecordsError(true); } })
       .finally(() => setRecordsLoading(false));
   };
 
@@ -137,7 +140,11 @@ export default function MonthlySummary() {
     else setMonth((m) => m + 1);
   };
 
-  const isNextDisabled = year > now.getFullYear() || (year === now.getFullYear() && month >= now.getMonth() + 1);
+  // 現在月の3ヶ月先までナビゲート可能（公休・有給の先行設定を確認するため）
+  const maxDate = new Date(now.getFullYear(), now.getMonth() + 3, 1);
+  const maxYear = maxDate.getFullYear();
+  const maxMonth = maxDate.getMonth() + 1;
+  const isNextDisabled = year > maxYear || (year === maxYear && month >= maxMonth);
 
   const handleStoreChange = (store: string) => {
     setSelectedStore(store);
@@ -192,6 +199,29 @@ export default function MonthlySummary() {
   const totalHours = records.reduce((sum, r) => sum + (r.actualHours ?? 0), 0);
   const totalDays = records.filter((r) => r.clockIn).length;
 
+  if (empError) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center gap-4">
+        <p className="text-sm text-gray-500">取得に失敗しました</p>
+        <button onClick={() => window.location.reload()} className="px-5 py-2 text-sm font-bold text-clock-blue border border-clock-blue/30 rounded-full hover:bg-clock-blue/5">
+          再読み込み
+        </button>
+      </div>
+    );
+  }
+
+  if (empLoading) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center gap-3">
+        <svg className="w-7 h-7 animate-spin text-clock-blue" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+        </svg>
+        <p className="text-[10px] font-bold text-gray-400 tracking-[0.2em]">NOTION 連携中</p>
+      </div>
+    );
+  }
+
   return (
     <div className="h-full flex flex-col">
 
@@ -221,32 +251,22 @@ export default function MonthlySummary() {
           </div>
 
           {/* 従業員ピル */}
-          <div className="flex-1 flex flex-wrap gap-2">
-            {empLoading ? (
-              <>
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-8 w-16 bg-gray-100 rounded-full animate-pulse" />
-                ))}
-              </>
-            ) : (
-              <>
-                {filteredEmployees.map((emp) => (
-                  <button
-                    key={emp.id}
-                    onClick={() => setSelectedId(emp.id)}
-                    className={`px-4 py-1.5 rounded-full text-sm font-bold transition-all duration-200 ${
-                      selectedId === emp.id
-                        ? "bg-clock-blue text-white shadow-sm"
-                        : emp.status === "退職"
-                        ? "bg-gray-100 text-gray-300"
-                        : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-                    }`}
-                  >
-                    {emp.name}
-                  </button>
-                ))}
-              </>
-            )}
+          <div className="flex-1 flex flex-wrap gap-2 items-center">
+            {filteredEmployees.map((emp) => (
+              <button
+                key={emp.id}
+                onClick={() => setSelectedId(emp.id)}
+                className={`px-4 py-1.5 rounded-full text-sm font-bold transition-all duration-200 ${
+                  selectedId === emp.id
+                    ? "bg-clock-blue text-white shadow-sm"
+                    : emp.status === "退職"
+                    ? "bg-gray-100 text-gray-300"
+                    : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                }`}
+              >
+                {emp.name}
+              </button>
+            ))}
           </div>
 
           {/* タイトル */}
@@ -440,11 +460,18 @@ export default function MonthlySummary() {
               return (
                 <div className="flex-1 flex overflow-hidden divide-x divide-gray-100 relative mx-4 mb-4 mt-2">
                   {recordsLoading && (
-                    <div className="absolute inset-0 bg-white/60 flex items-center justify-center z-10">
-                      <svg className="w-5 h-5 animate-spin text-clock-blue" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <div className="absolute inset-0 bg-white/70 flex flex-col items-center justify-center z-10 gap-3">
+                      <svg className="w-6 h-6 animate-spin text-clock-blue" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                         <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
                       </svg>
+                      <p className="text-[10px] font-bold text-gray-400 tracking-[0.2em]">NOTION 連携中</p>
+                    </div>
+                  )}
+                  {recordsError && !recordsLoading && (
+                    <div className="absolute inset-0 bg-white/90 flex flex-col items-center justify-center z-10 gap-3">
+                      <p className="text-sm text-gray-500">取得に失敗しました</p>
+                      <button onClick={() => window.location.reload()} className="px-4 py-1.5 text-xs font-bold text-clock-blue border border-clock-blue/30 rounded-full hover:bg-clock-blue/5">再読み込み</button>
                     </div>
                   )}
                   {renderCol(1, half)}

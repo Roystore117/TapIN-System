@@ -87,11 +87,12 @@ function urgencyLevel(emp: CareerEmployee): Urgency {
 // ── UI atoms ───────────────────────────────────
 function Spinner() {
   return (
-    <div className="flex justify-center py-12">
-      <svg className="w-6 h-6 animate-spin text-clock-blue" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+    <div className="h-full w-full flex flex-col items-center justify-center gap-3">
+      <svg className="w-7 h-7 animate-spin text-clock-blue" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
         <circle className="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
         <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
       </svg>
+      <p className="text-[10px] font-bold text-gray-400 tracking-[0.2em]">NOTION 連携中</p>
     </div>
   );
 }
@@ -152,7 +153,7 @@ function RankMap({ rank, ranksAsc }: { rank: string; ranksAsc: string[] }) {
   const idx = rankIndex(rank, ranksAsc);
   return (
     <div>
-      <div className="flex items-baseline justify-between mb-4">
+      <div className="flex items-baseline justify-between mb-3">
         <SectionLabel>Rank</SectionLabel>
         <p className="text-sm font-extrabold text-gray-700">{rank || "未設定"}</p>
       </div>
@@ -182,87 +183,64 @@ function RankMap({ rank, ranksAsc }: { rank: string; ranksAsc: string[] }) {
 
 // ── Timeline ───────────────────────────────────
 function Timeline({ emp }: { emp: CareerEmployee }) {
-  const rawEvents = [
-    { key: "join",      label: "入社",               date: emp.joinDate,             extra: emp.joinType || "" },
-    { key: "interview", label: "キャリアアップ面談", date: emp.careerInterviewDate,  extra: "" },
-    { key: "regular",   label: "正社員切替",         date: emp.careerUpdateDate,     extra: "" },
+  const events = [
+    { key: "join",      label: "入社",               date: emp.joinDate,             extra: emp.joinType || "", pos: 0,   align: "start"  as const },
+    { key: "interview", label: "キャリアアップ面談", date: emp.careerInterviewDate,  extra: "",                  pos: 50,  align: "center" as const },
+    { key: "regular",   label: "正社員切替",         date: emp.careerUpdateDate,     extra: "",                  pos: 100, align: "end"    as const },
   ];
-  const sorted = rawEvents
-    .filter((e) => parseDate(e.date) !== null)
-    .sort((a, b) => parseDate(a.date)!.getTime() - parseDate(b.date)!.getTime());
-
-  if (sorted.length === 0) {
+  const hasAnyDate = events.some((e) => parseDate(e.date) !== null);
+  if (!hasAnyDate) {
     return (
       <div>
         <SectionLabel>Timeline</SectionLabel>
-        <p className="mt-4 text-center py-10 text-sm text-gray-300">日付情報が未設定です</p>
+        <p className="mt-3 text-center py-8 text-sm text-gray-300">日付情報が未設定です</p>
       </div>
     );
   }
 
-  const times = sorted.map((e) => parseDate(e.date)!.getTime());
-  const todayT = todayDate().getTime();
-  const minT = Math.min(times[0], todayT);
-  const maxT = Math.max(times[times.length - 1], todayT);
-  const range = maxT - minT || 1;
-  const pct = (t: number) => ((t - minT) / range) * 100;
-  const todayPos = pct(todayT);
-
   return (
     <div>
       <SectionLabel>Timeline</SectionLabel>
-      <div className="mt-10 px-4">
+      <div className="mt-4 px-4">
         {/* トラック */}
         <div className="relative h-4">
           <div className="absolute inset-x-0 top-1/2 h-[2px] bg-gray-100 -translate-y-1/2 rounded-full" />
-          {todayPos > 0 && (
-            <div className="absolute top-1/2 left-0 h-[2px] bg-clock-blue -translate-y-1/2 rounded-full" style={{ width: `${todayPos}%` }} />
-          )}
-          {/* NOW マーカー */}
-          {todayPos >= 0 && todayPos <= 100 && (
-            <div className="absolute top-0 bottom-0 -translate-x-1/2" style={{ left: `${todayPos}%` }}>
-              <div className="w-[2px] h-full bg-clock-blue mx-auto" />
-              <p className="absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] font-extrabold text-clock-blue tracking-[0.25em]">NOW</p>
-            </div>
-          )}
           {/* イベントドット */}
-          {sorted.map((ev) => {
-            const t = parseDate(ev.date)!.getTime();
-            const days = daysUntil(ev.date)!;
-            const isPast = days < 0;
-            const isCurrent = days >= 0 && days <= 30;
+          {events.map((ev) => {
+            const d = parseDate(ev.date);
+            if (!d) {
+              return (
+                <div key={ev.key} className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-10" style={{ left: `${ev.pos}%` }}>
+                  <div className="w-4 h-4 rounded-full border-2 bg-white border-gray-200" />
+                </div>
+              );
+            }
             return (
-              <div key={ev.key} className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-10" style={{ left: `${pct(t)}%` }}>
-                <div className={`w-4 h-4 rounded-full border-2 ${
-                  isCurrent ? "bg-white border-clock-blue ring-4 ring-clock-blue/20" :
-                  isPast    ? "bg-clock-blue border-clock-blue" :
-                              "bg-white border-gray-300"
-                }`} />
+              <div key={ev.key} className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-10" style={{ left: `${ev.pos}%` }}>
+                <div className="w-4 h-4 rounded-full border-2 bg-white border-gray-300" />
               </div>
             );
           })}
         </div>
 
         {/* ラベル */}
-        <div className="relative mt-4 h-16">
-          {sorted.map((ev) => {
-            const t = parseDate(ev.date)!.getTime();
-            const days = daysUntil(ev.date)!;
-            const isCurrent = days >= 0 && days <= 30;
-            const isPast = days < 0;
-            const pos = pct(t);
-            const align = pos < 15 ? "start" : pos > 85 ? "end" : "center";
-            const translate = align === "start" ? "translateX(0)" : align === "end" ? "translateX(-100%)" : "translateX(-50%)";
-            const textAlign = align === "start" ? "text-left" : align === "end" ? "text-right" : "text-center";
+        <div className="relative mt-3 h-16">
+          {events.map((ev) => {
+            const d = parseDate(ev.date);
+            const days = d ? daysUntil(ev.date)! : null;
+            const isCurrent = days !== null && days >= 0 && days <= 30;
+            const isPast = days !== null && days < 0;
+            const translate = ev.align === "start" ? "translateX(0)" : ev.align === "end" ? "translateX(-100%)" : "translateX(-50%)";
+            const textAlign = ev.align === "start" ? "text-left" : ev.align === "end" ? "text-right" : "text-center";
             return (
-              <div key={ev.key} className="absolute top-0 w-32" style={{ left: `${pos}%`, transform: translate }}>
+              <div key={ev.key} className="absolute top-0 w-28" style={{ left: `${ev.pos}%`, transform: translate }}>
                 <p className={`text-[10px] font-bold tracking-wide ${textAlign} ${
                   isCurrent ? "text-clock-blue" : isPast ? "text-gray-500" : "text-gray-400"
                 }`}>{ev.label}</p>
-                <p className={`text-xs font-extrabold tabular-nums mt-0.5 ${textAlign} text-gray-700`}>{formatDate(ev.date)}</p>
-                <p className={`text-[10px] font-bold mt-0.5 ${textAlign} ${
-                  isCurrent ? "text-clock-blue" : "text-gray-400"
-                }`}>{daysLabel(days)}</p>
+                <p className={`text-xs font-extrabold tabular-nums mt-0.5 ${textAlign} ${d ? "text-gray-700" : "text-gray-300"}`}>{d ? formatDate(ev.date) : "—"}</p>
+                {days !== null && (
+                  <p className={`text-[10px] font-bold mt-0.5 ${textAlign} ${isCurrent ? "text-clock-blue" : "text-gray-400"}`}>{daysLabel(days)}</p>
+                )}
                 {ev.extra && (
                   <p className={`text-[10px] font-bold text-gray-400 mt-0.5 ${textAlign}`}>{ev.extra}</p>
                 )}
@@ -316,7 +294,7 @@ function Conditions({ emp }: { emp: CareerEmployee }) {
   return (
     <div>
       <SectionLabel>Conditions</SectionLabel>
-      <div className="mt-3 flex divide-x divide-slate-200 rounded-2xl bg-slate-100 py-3.5">
+      <div className="mt-2 flex divide-x divide-slate-200 rounded-2xl bg-slate-100 py-3">
         <div className="flex-1 px-3 min-w-0">
           <p className="text-[10px] font-bold text-gray-400 tracking-wide mb-1 truncate">試用期間</p>
           <p className="text-sm font-extrabold text-gray-700 tabular-nums truncate">{periodText}</p>
@@ -665,7 +643,7 @@ export default function CareerSettings() {
 
       {/* コンテンツ */}
       <div className="flex-1 flex overflow-hidden">
-        {loading && <div className="flex-1"><Spinner /></div>}
+        {loading && <div className="flex-1 flex items-center justify-center"><Spinner /></div>}
         {error && <p className="flex-1 text-sm text-gray-400 text-center py-12">{error}</p>}
         {!loading && !error && subTab === "all" && (
           <CareerAllList
@@ -723,7 +701,7 @@ export default function CareerSettings() {
               <div className="flex-1 flex flex-col overflow-hidden">
                 <div className="flex-1 overflow-y-auto">
                   {/* Profile：名前 + 3チップ + 編集ボタン */}
-                  <div className="px-8 pt-8 pb-2 flex items-end gap-8">
+                  <div className="px-8 pt-5 pb-1 flex items-end gap-8">
                     <div className="shrink-0">
                       <p className="text-[10px] font-bold text-gray-300 tracking-[0.25em] uppercase mb-1">Profile</p>
                       <p className="text-2xl font-extrabold text-gray-800 leading-none">{selectedEmp.name}</p>
@@ -754,7 +732,7 @@ export default function CareerSettings() {
                     </button>
                   </div>
 
-                  <div className="px-8 py-6 space-y-8">
+                  <div className="px-8 py-4 space-y-5">
                     {!editing && (
                       <>
                         <RankMap rank={rank} ranksAsc={ranksAsc} />

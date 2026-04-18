@@ -106,11 +106,12 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
 
 function Spinner() {
   return (
-    <div className="flex justify-center py-12">
-      <svg className="w-6 h-6 animate-spin text-clock-blue" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+    <div className="h-full w-full flex flex-col items-center justify-center gap-3 py-20">
+      <svg className="w-7 h-7 animate-spin text-clock-blue" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
         <circle className="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
         <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
       </svg>
+      <p className="text-[10px] font-bold text-gray-400 tracking-[0.2em]">NOTION 連携中</p>
     </div>
   );
 }
@@ -137,7 +138,7 @@ export default function AdminPage() {
 
   // ── 従業員マスタ ──────────────────────────
   const [employees, setEmployees] = useState<EmployeeAdmin[]>([]);
-  const [empLoading, setEmpLoading] = useState(false);
+  const [empLoading, setEmpLoading] = useState(true);
   const [empError, setEmpError] = useState("");
   const [selectedEmpStore, setSelectedEmpStore] = useState<string>("");
   const [empSubTab, setEmpSubTab] = useState<"basic" | "career">("basic");
@@ -315,7 +316,17 @@ export default function AdminPage() {
       {activeTab === "payroll" && <PayrollSettings />}
       {activeTab === "debug" && <DebugSettings />}
 
-      {activeTab === "employees" && (
+      {activeTab === "employees" && empLoading && (
+        <div className="h-full flex flex-col items-center justify-center gap-3">
+          <svg className="w-7 h-7 animate-spin text-clock-blue" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+          </svg>
+          <p className="text-[10px] font-bold text-gray-400 tracking-[0.2em]">NOTION 連携中</p>
+        </div>
+      )}
+
+      {activeTab === "employees" && !empLoading && (
         <div className="h-full flex flex-col">
           {/* 部門フィルター + サブタブ */}
           <div className="px-6 py-4 border-b border-gray-100 shrink-0 flex items-center gap-3">
